@@ -1,0 +1,33 @@
+database:
+  stock_data: "db/stock_data.db"
+  stock_daily: "db/stock_daily.db"
+  strategy: "db/strategy.db"
+  market_data: "db/market_data.db"
+
+models:
+  regime_weights: "models/regime_weights.pkl"
+  regime_weights_proposed: "models/regime_weights_proposed.pkl"
+  bull_weights_proposed: "models/bull_weights_proposed.pkl"
+
+data:
+  market_regime_labels: "market_regime_labels.csv"
+  market_regime_labels_v2: "market_regime_labels_v2.csv"
+  factor_ic_csv_source: "${FACTOR_IC_CSV_PATH:-data/factor_ic_neutral_2023_2026.csv}"
+  backtest_results: "backtest_results_v2.csv"
+
+logs:
+  scheduler: "logs/scheduler.log"
+  agent_auto_run: "agent/auto_run.log"
+
+reports:
+  agent_cruise: "agent/auto_cruise_report_{date}.json"
+  agent_report: "agent/report_{date}.json"
+
+config:
+  agent: "agent/config.yaml"
+  candidate_factors: "config/candidate_factors.yaml"
+  market_regime: "config/market_regime.yaml"
+
+must_exist:
+  - "database.stock_data"
+  - "models.regime_weights"

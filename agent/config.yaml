@@ -1,0 +1,60 @@
+backtest:
+  full_weeks: 208
+  quick_weeks: 104
+  top_n_stocks: 30
+  transaction_cost: 0.0015
+factors:
+  base_pool:
+  - return_5d
+  - return_20d
+  - return_60d
+  - excess_return_20d
+  - volatility_20d
+  - volatility_60d
+  - skewness_20d
+  - max_drawdown_20d
+  - atr_ratio
+  - pe_ttm
+  - pb
+  - roe
+  - turnover_rate
+  - north_net_inflow_ratio
+  - profit_ratio_estimate
+  - chip_concentration
+  custom_new_factors:
+  - excess_return_20d
+  - north_net_inflow_ratio
+  - profit_ratio_estimate
+  - return_60d
+  - volatility_60d
+  experimental_pool:
+  - return_10d
+  - return_120d
+  - volatility_10d
+  - volatility_120d
+  - max_drawdown_60d
+  - turnover_rate_5d
+  - turnover_rate_20d
+  - vol_ratio
+  - beta_60d
+  - quality_score
+  - low_turnover_flag
+  - timeliness_decay
+special_boost:
+  factors:
+  - north_net_inflow_ratio
+  - profit_ratio_estimate
+  - chip_concentration
+  multiplier: 1.5
+validation:
+  baseline_end_date: '20241231'
+  baseline_start_date: '20200102'
+  decay_invalid_threshold: 0.5
+  decay_warning_threshold: 0.3
+  recent_weeks_lookback: 52
+risk_control:
+  extreme_market_threshold: -0.045
+  dark_mode_beta_limit: 1.2
+  min_effective_width: 2
+  prediction_error_threshold: -0.02
+  timeliness_half_life_days: 3

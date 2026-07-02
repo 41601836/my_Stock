@@ -1,0 +1,44 @@
+# 市场状态自适应选股系统 - 市场状态分类器及特征计算配置文件 (全历史修正版)
+
+# 数据库与表名配置
+database:
+  stock_data_db: "db/stock_data.db"
+  market_data_db: "db/market_data.db"
+  factor_ic_csv_source: "${FACTOR_IC_CSV_PATH:-data/factor_ic_neutral_2023_2026.csv}"
+  
+  tables:
+    factor_ic_neutral: "factor_ic_neutral"
+    daily_prices: "daily_prices"
+    daily_basic: "daily_basic"
+    moneyflow: "moneyflow"
+    factor_values: "factor_values"
+
+# 数据过滤起止日期配置
+data_range:
+  start_date: "20200101"
+  end_date: "20260702"
+
+# 市场状态分类器阈值配置
+regime_classifier:
+  benchmark_code: "equal_weight"
+  
+  # 牛市 (Bull) 判定条件
+  bull:
+    return_20d_threshold: 0.05       # 过去20日涨幅大于 5%
+    vol_quantile_limit: 0.50         # 20日波动率处于历史中位数下方
+
+  # 熊市 (Bear) 判定条件
+  bear:
+    return_20d_threshold: -0.03      # 过去20日涨幅小于 -3%
+    vol_quantile_limit: 0.50         # 20日波动率处于历史中位数上方
+
+  # 震荡市 (Range) 判定条件
+  range:
+    return_20d_min: -0.03            # 过去20日涨幅在 -3% ~ +5% 之间
+    return_20d_max: 0.05
+
+  # 黑市/空仓 (Dark/Stay) 判定条件
+  dark:
+    drawdown_5d_threshold: -0.05     # 过去5日最大回撤幅度大于 5%（即回撤小于 -0.05）
+    vol_quantile_limit: 0.75         # 20日波动率大于历史 75% 分位数
+    up_ratio_threshold: 0.30         # 当日全市场上涨个股占比小于 30%

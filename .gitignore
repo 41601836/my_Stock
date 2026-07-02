@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pyo
+.Python
+*.db
+*.db-shm
+*.db-wal
+*.log
+*.png
+*.pkl
+node_modules/
+.vscode/
+.DS_Store
+archives/

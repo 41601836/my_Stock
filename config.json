@@ -1,0 +1,203 @@
+{
+    "api": {
+        "tushare_token": "bcfb8db101b928d1dfff5685dff95f2441d8c1b4395e2ecd067116ea",
+        "feishu_webhook": "https://open.feishu.cn/open-apis/bot/v2/hook/2035498b-1d7c-4c86-956d-0de5f8867515"
+    },
+    "data_source": {
+        "primary": "mootdx",
+        "valuation": "tencent",
+        "fallback": "akshare"
+    },
+    "akshare": {
+        "enable": true,
+        "deviation_limit": 0.05
+    },
+    "crawler": {
+        "interval": 2.0,
+        "timeout": 10.0,
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    },
+    "data_factory": {
+        "priority": ["tushare", "akshare", "crawl"],
+        "auto_switch": true,
+        "fail_max": 3,
+        "deviation_limit": 0.05
+    },
+    "scheduler": {
+        "scan_times": ["08:40", "11:25", "14:30", "20:00"],
+        "max_candidates": 100,
+        "batch_size": 50
+    },
+    "ollama": {
+        "model": "qwen2.5:7b-instruct-q4_K_M",
+        "host": "http://localhost:11434"
+    },
+    "strategy": {
+        "name": "灵眸分析",
+        "version": "4.0",
+        "active_mode": "ic_based",
+        "thresholds": {
+            "strong": 25,
+            "medium": 12
+        }
+    },
+    "ai": {
+        "trigger_score": 100,
+        "max_concurrent": 2
+    },
+    "filter": {
+        "top_n": 50,
+        "pct_min": 1.0,
+        "pct_max": 9.5,
+        "turn_min": 1.0,
+        "amount_min": 50000
+    },
+    "macro_score": {
+        "dim_score_green": 1.0,
+        "dim_score_yellow": 0.5,
+        "dim_score_red": 0.0,
+        "capital_dynamic_threshold": 30000000000,
+        "weight_capital_normal": 1.0,
+        "weight_capital_high": 1.5,
+        "score_attack": 4.0,
+        "score_cautious_low": 2.5,
+        "score_cautious_high": 3.5,
+        "pos_attack": 0.8,
+        "pos_cautious": 0.5,
+        "pos_defend": 0.3
+    },
+    "macro_veto": {
+        "amount_drop_ratio": 0.3,
+        "north_net_out_threshold": 500000000,
+        "limit_down_threshold": 100,
+        "max_board_threshold": 2,
+        "us_index_drop": 3.0,
+        "us_index_drop_threshold": 3.0,
+        "vix_risk_threshold": 40,
+        "foreign_index_drop": 3.0,
+        "a_open_drop": 1.5,
+        "up_down_ratio_standard": 1.0
+    },
+    "intraday_revise": {
+        "volume_shrink_ratio": 0.15,
+        "foreign_board_drop": 3.0,
+        "accept_ratio_threshold": 0.3,
+        "emotion_deviate_ratio": 0.10
+    },
+    "board_rule": {
+        "top_board_count": 5,
+        "score_full": 1.0,
+        "score_half": 0.5,
+        "score_zero": 0.0,
+        "flow_5d_100b": 10000000000,
+        "flow_5d_50b": 5000000000,
+        "cover_full": 0.12,
+        "cover_half": 0.08,
+        "retreat_3m": 0.15,
+        "week_rise_limit": 0.05,
+        "siphon_multiple": 2.0
+    },
+    "board_structure": {
+        "leader_min_board": 3,
+        "ladder_break_threshold": 2,
+        "main_turnover_ratio": 0.08,
+        "main_float_threshold": 5000000000
+    },
+    "board_style": {
+        "style_map": {
+            "半导体": "科技",
+            "人工智能": "科技",
+            "白酒": "消费",
+            "食品饮料": "消费",
+            "银行": "大金融",
+            "证券": "大金融",
+            "煤炭": "周期",
+            "有色": "周期",
+            "新能源车": "赛道",
+            "光伏": "赛道"
+        },
+        "intraday_strength": {
+            "strong_threshold": 0.7,
+            "weak_threshold": 0.3
+        },
+        "cross_day_strength": {
+            "strong_threshold": 0.65,
+            "weak_threshold": 0.35
+        },
+        "cross_day_days": 3
+    },
+    "board_rotation": {
+        "intraday_amplitude": 0.08,
+        "pull_back_ratio": 0.05,
+        "cross_days": 3,
+        "hot_switch_freq": 2,
+        "high_position_gain": 0.20,
+        "low_position_gain": 0.05,
+        "strong_rotate_num": 2,
+        "mid_rotate_num": 1
+    },
+    "board_position": {
+        "style_max_pos": 0.4,
+        "market_max_pos": 0.8,
+        "warn_ratio": 0.8,
+        "strong_coeff": 1.1,
+        "weak_coeff": 0.9
+    },
+    "board_link_siphon": {
+        "link_corr_strong": 0.8,
+        "link_corr_mid": 0.5,
+        "sync_prob_strong": 0.7,
+        "sync_prob_mid": 0.4,
+        "fund_same_ratio": 0.6,
+        "siphon_absorb_strong": 0.4,
+        "siphon_absorb_mid": 0.2,
+        "loss_rate_strong": 0.3,
+        "loss_rate_mid": 0.15
+    },
+    "stock_filter": {
+        "ma_period": 10,
+        "turnover_min": 0.01,
+        "turnover_max": 0.15,
+        "stage_gain_limit": 0.25,
+        "volume_ratio": 1.05
+    },
+    "stock_score": {
+        "weight_fundamental": 0.4,
+        "weight_capital": 0.35,
+        "weight_chip": 0.25,
+        "profit_high": 0.3,
+        "profit_mid": 0.1,
+        "val_low": 0.2,
+        "val_mid": 0.6,
+        "net_in_high": 0.03,
+        "net_in_mid": 0.0,
+        "big_order_high": 0.2,
+        "big_order_mid": 0.1,
+        "turnover_stable": 0.2,
+        "turnover_mid": 0.4,
+        "score_excellent": 0.8,
+        "score_good": 0.6,
+        "score_normal": 0.4
+    },
+    "stock_trade_risk": {
+        "support_proximity": 0.03,
+        "pressure_proximity": 0.04,
+        "fixed_stop_loss": 0.05,
+        "trailing_step": 0.02,
+        "first_take_profit": 0.08,
+        "second_take_profit": 0.15,
+        "defense_stop_adjust": 0.02,
+        "defense_profit_adjust": 0.03,
+        "base_position": 0.12,
+        "single_max_pos": 0.20,
+        "coeff_excellent": 1.2,
+        "coeff_good": 1.0,
+        "coeff_normal": 0.8,
+        "coeff_weak": 0.6,
+        "coeff_board_strong": 1.1,
+        "coeff_board_weak": 0.8,
+        "coeff_attack": 1.1,
+        "coeff_cautious": 0.9,
+        "coeff_defend": 0.5
+    }
+}

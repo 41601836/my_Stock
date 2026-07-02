@@ -1,0 +1,17 @@
+candidate_factors:
+- return_5d
+- return_20d
+- return_60d
+- excess_return_20d
+- volatility_20d
+- volatility_60d
+- skewness_20d
+- max_drawdown_20d
+- atr_ratio
+- pe_ttm
+- pb
+- roe
+- turnover_rate
+- north_net_inflow_ratio
+- profit_ratio_estimate
+- chip_concentration

@@ -1,0 +1,160 @@
+{
+  "audit_time": "2026-07-03 00:59:17",
+  "audit_weeks": 8,
+  "total_factors": 16,
+  "custom_factors": [
+    "excess_return_20d",
+    "north_net_inflow_ratio",
+    "profit_ratio_estimate",
+    "return_60d",
+    "volatility_60d"
+  ],
+  "warning_count": 0,
+  "critical_count": 10,
+  "factors": [
+    {
+      "factor": "return_5d",
+      "baseline_ic": -0.021,
+      "latest_ic": -0.0869,
+      "decay_ratio": -313.3,
+      "status": "HEALTHY",
+      "reason": "正常",
+      "in_custom": false
+    },
+    {
+      "factor": "return_20d",
+      "baseline_ic": -0.0422,
+      "latest_ic": -0.0118,
+      "decay_ratio": 72.1,
+      "status": "CRITICAL",
+      "reason": "衰减>50%",
+      "in_custom": false
+    },
+    {
+      "factor": "return_60d",
+      "baseline_ic": -0.0539,
+      "latest_ic": -0.05,
+      "decay_ratio": 7.3,
+      "status": "HEALTHY",
+      "reason": "正常",
+      "in_custom": true
+    },
+    {
+      "factor": "excess_return_20d",
+      "baseline_ic": -0.0422,
+      "latest_ic": -0.0118,
+      "decay_ratio": 72.1,
+      "status": "CRITICAL",
+      "reason": "衰减>50%",
+      "in_custom": true
+    },
+    {
+      "factor": "volatility_20d",
+      "baseline_ic": -0.0803,
+      "latest_ic": 0.0136,
+      "decay_ratio": 83.1,
+      "status": "CRITICAL",
+      "reason": "衰减>50%",
+      "in_custom": false
+    },
+    {
+      "factor": "volatility_60d",
+      "baseline_ic": -0.0737,
+      "latest_ic": 0.0087,
+      "decay_ratio": 88.2,
+      "status": "CRITICAL",
+      "reason": "衰减>50%",
+      "in_custom": true
+    },
+    {
+      "factor": "skewness_20d",
+      "baseline_ic": -0.0236,
+      "latest_ic": -0.1781,
+      "decay_ratio": -654.8,
+      "status": "HEALTHY",
+      "reason": "正常",
+      "in_custom": false
+    },
+    {
+      "factor": "max_drawdown_20d",
+      "baseline_ic": 0.0317,
+      "latest_ic": 0.0156,
+      "decay_ratio": 50.8,
+      "status": "CRITICAL",
+      "reason": "衰减>50%",
+      "in_custom": false
+    },
+    {
+      "factor": "atr_ratio",
+      "baseline_ic": -0.085,
+      "latest_ic": 0.0213,
+      "decay_ratio": 74.9,
+      "status": "CRITICAL",
+      "reason": "衰减>50%",
+      "in_custom": false
+    },
+    {
+      "factor": "pe_ttm",
+      "baseline_ic": -0.0349,
+      "latest_ic": -0.0303,
+      "decay_ratio": 13.2,
+      "status": "HEALTHY",
+      "reason": "正常",
+      "in_custom": false
+    },
+    {
+      "factor": "pb",
+      "baseline_ic": -0.0531,
+      "latest_ic": 0.0239,
+      "decay_ratio": 54.9,
+      "status": "CRITICAL",
+      "reason": "衰减>50%",
+      "in_custom": false
+    },
+    {
+      "factor": "roe",
+      "baseline_ic": -0.0051,
+      "latest_ic": 0.003,
+      "decay_ratio": 41.9,
+      "status": "CRITICAL",
+      "reason": "基准IC过低",
+      "in_custom": false
+    },
+    {
+      "factor": "turnover_rate",
+      "baseline_ic": -0.0779,
+      "latest_ic": -0.0185,
+      "decay_ratio": 76.3,
+      "status": "CRITICAL",
+      "reason": "衰减>50%",
+      "in_custom": false
+    },
+    {
+      "factor": "north_net_inflow_ratio",
+      "baseline_ic": -0.0015,
+      "latest_ic": 0.0148,
+      "decay_ratio": -888.3,
+      "status": "CRITICAL",
+      "reason": "基准IC过低",
+      "in_custom": true
+    },
+    {
+      "factor": "profit_ratio_estimate",
+      "baseline_ic": -0.0355,
+      "latest_ic": -0.0522,
+      "decay_ratio": -46.8,
+      "status": "HEALTHY",
+      "reason": "正常",
+      "in_custom": true
+    },
+    {
+      "factor": "chip_concentration",
+      "baseline_ic": -0.0452,
+      "latest_ic": 0.0537,
+      "decay_ratio": -18.7,
+      "status": "HEALTHY",
+      "reason": "正常",
+      "in_custom": false
+    }
+  ]
+}

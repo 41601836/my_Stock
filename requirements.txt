@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+psutil
+pydantic
+pandas
+numpy
+tushare
+requests

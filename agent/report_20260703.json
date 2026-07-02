@@ -1,0 +1,177 @@
+{
+    "run_mode": "quick",
+    "run_date": "20260703",
+    "validation_summary": {
+        "total_monitored": 16,
+        "active_count": 7,
+        "detailed_validation": {
+            "return_5d": {
+                "factor": "return_5d",
+                "baseline_ic": -0.02102585876307235,
+                "recent_ic": -0.05907420732315216,
+                "decay_ratio": -1.8095978380157298,
+                "status": "VALID",
+                "reason": "因子近期效能正常，衰减比为 -180.96%"
+            },
+            "return_20d": {
+                "factor": "return_20d",
+                "baseline_ic": -0.04219932867044663,
+                "recent_ic": -0.04379524655243139,
+                "decay_ratio": -0.03781856091711777,
+                "status": "VALID",
+                "reason": "因子近期效能正常，衰减比为 -3.78%"
+            },
+            "return_60d": {
+                "factor": "return_60d",
+                "baseline_ic": -0.05394893410039414,
+                "recent_ic": -0.05342163618545914,
+                "decay_ratio": 0.009774019148436675,
+                "status": "VALID",
+                "reason": "因子近期效能正常，衰减比为 0.98%"
+            },
+            "excess_return_20d": {
+                "factor": "excess_return_20d",
+                "baseline_ic": -0.04219932867044663,
+                "recent_ic": -0.04379524655243139,
+                "decay_ratio": -0.03781856091711777,
+                "status": "VALID",
+                "reason": "因子近期效能正常，衰减比为 -3.78%"
+            },
+            "volatility_20d": {
+                "factor": "volatility_20d",
+                "baseline_ic": -0.0803135841708905,
+                "recent_ic": -0.03315225682609271,
+                "decay_ratio": 0.5872148258811156,
+                "status": "INVALID",
+                "reason": "因子 IC 衰减比高达 58.72%, 超过阈值 50.0%"
+            },
+            "volatility_60d": {
+                "factor": "volatility_60d",
+                "baseline_ic": -0.07371357244776729,
+                "recent_ic": -0.020606061492892996,
+                "decay_ratio": 0.7204577012259954,
+                "status": "INVALID",
+                "reason": "因子 IC 衰减比高达 72.05%, 超过阈值 50.0%"
+            },
+            "skewness_20d": {
+                "factor": "skewness_20d",
+                "baseline_ic": -0.0235998460743423,
+                "recent_ic": -0.040744044215180214,
+                "decay_ratio": -0.72645381189486,
+                "status": "VALID",
+                "reason": "因子近期效能正常，衰减比为 -72.65%"
+            },
+            "max_drawdown_20d": {
+                "factor": "max_drawdown_20d",
+                "baseline_ic": 0.0316549293790397,
+                "recent_ic": 0.01100894198155725,
+                "decay_ratio": 0.652220295621736,
+                "status": "INVALID",
+                "reason": "因子 IC 衰减比高达 65.22%, 超过阈值 50.0%"
+            },
+            "atr_ratio": {
+                "factor": "atr_ratio",
+                "baseline_ic": -0.08495103994829199,
+                "recent_ic": -0.028539325689911167,
+                "decay_ratio": 0.6640497196116435,
+                "status": "INVALID",
+                "reason": "因子 IC 衰减比高达 66.40%, 超过阈值 50.0%"
+            },
+            "pe_ttm": {
+                "factor": "pe_ttm",
+                "baseline_ic": -0.034861734687050575,
+                "recent_ic": -0.010923209796476272,
+                "decay_ratio": 0.6866705029301451,
+                "status": "INVALID",
+                "reason": "因子 IC 衰减比高达 68.67%, 超过阈值 50.0%"
+            },
+            "pb": {
+                "factor": "pb",
+                "baseline_ic": -0.05306865933824002,
+                "recent_ic": -0.011710730877583047,
+                "decay_ratio": 0.7793286843192481,
+                "status": "INVALID",
+                "reason": "因子 IC 衰减比高达 77.93%, 超过阈值 50.0%"
+            },
+            "roe": {
+                "factor": "roe",
+                "baseline_ic": -0.005119896128524873,
+                "recent_ic": -0.003626939185332171,
+                "decay_ratio": 0.2915990687535388,
+                "status": "INVALID",
+                "reason": "历史基准 IC 绝对值过小，属低效因子"
+            },
+            "turnover_rate": {
+                "factor": "turnover_rate",
+                "baseline_ic": -0.07793129468699621,
+                "recent_ic": -0.04092025900349212,
+                "decay_ratio": 0.47491878368190177,
+                "status": "WARNING",
+                "reason": "因子 IC 衰减比达 47.49%, 处于警戒区间"
+            },
+            "north_net_inflow_ratio": {
+                "factor": "north_net_inflow_ratio",
+                "baseline_ic": -0.001502364378341597,
+                "recent_ic": -0.019905348416488666,
+                "decay_ratio": -12.24934796341579,
+                "status": "INVALID",
+                "reason": "历史基准 IC 绝对值过小，属低效因子"
+            },
+            "profit_ratio_estimate": {
+                "factor": "profit_ratio_estimate",
+                "baseline_ic": -0.035535265679448896,
+                "recent_ic": -0.03701268258442347,
+                "decay_ratio": -0.04157607595513246,
+                "status": "VALID",
+                "reason": "因子近期效能正常，衰减比为 -4.16%"
+            },
+            "chip_concentration": {
+                "factor": "chip_concentration",
+                "baseline_ic": -0.04523047026704899,
+                "recent_ic": -0.0012691399313746838,
+                "decay_ratio": 0.9719405983647429,
+                "status": "INVALID",
+                "reason": "因子 IC 衰减比高达 97.19%, 超过阈值 50.0%"
+            }
+        }
+    },
+    "recommendation_summary": {
+        "decision_status": "RETAIN_ORIGINAL_COMBINATION",
+        "decision_message": "Quick 模式仅做基础超额回测验证。",
+        "old_portfolio": {
+            "factors": [
+                "return_5d",
+                "return_20d",
+                "return_60d",
+                "excess_return_20d",
+                "skewness_20d",
+                "turnover_rate",
+                "profit_ratio_estimate"
+            ],
+            "weights": {
+                "return_5d": -0.07092790760670661,
+                "return_20d": -0.1423537615623707,
+                "return_60d": -0.181989475743721,
+                "excess_return_20d": -0.1423537615623707,
+                "skewness_20d": -0.0796109077282157,
+                "turnover_rate": -0.2628907447498996,
+                "profit_ratio_estimate": -0.11987344104671568
+            },
+            "metrics": {
+                "total_return": 0.9209316283214977,
+                "annualized_return": 0.38597677769921446,
+                "annualized_volatility": 0.5980987667946154,
+                "max_drawdown": -0.21901654401519144,
+                "calmar_ratio": 1.7623179081505473,
+                "excess_total_return": 0.4601187450125388,
+                "excess_annual_return": 0.20835373339620156,
+                "excess_annual_volatility": 0.4462127564505487,
+                "excess_max_drawdown": -0.3618088004021883,
+                "excess_calmar_ratio": 0.5758669583619707,
+                "win_rate": 0.47115384615384615,
+                "excess_win_rate": 0.40384615384615385,
+                "weeks": 104
+            }
+        }
+    }
+}
