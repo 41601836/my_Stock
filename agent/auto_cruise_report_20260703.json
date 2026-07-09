@@ -1,0 +1,287 @@
+{
+    "run_date": "20260703",
+    "success_target_reached": true,
+    "best_overall_excess_calmar": 0.7604678167944114,
+    "best_overall_combination": [
+        "north_net_inflow_ratio",
+        "return_5d",
+        "turnover_rate_20d"
+    ],
+    "best_overall_params": {
+        "top_n": 10,
+        "multiplier": 1.2
+    },
+    "total_loops_tried": 18,
+    "search_trajectory": [
+        {
+            "combo_index": 1,
+            "factor_combination": [
+                "profit_ratio_estimate",
+                "return_60d",
+                "turnover_rate",
+                "vol_ratio",
+                "volatility_20d"
+            ],
+            "tested_params": {
+                "top_n": 20,
+                "multiplier": 1.2
+            },
+            "excess_calmar_ratio": 0.16022410767921832,
+            "absolute_calmar_ratio": 0.49080826287074336
+        },
+        {
+            "combo_index": 1,
+            "factor_combination": [
+                "profit_ratio_estimate",
+                "return_60d",
+                "turnover_rate",
+                "vol_ratio",
+                "volatility_20d"
+            ],
+            "tested_params": {
+                "top_n": 20,
+                "multiplier": 1.0
+            },
+            "excess_calmar_ratio": 0.16022410767921832,
+            "absolute_calmar_ratio": 0.49080826287074336
+        },
+        {
+            "combo_index": 1,
+            "factor_combination": [
+                "profit_ratio_estimate",
+                "return_60d",
+                "turnover_rate",
+                "vol_ratio",
+                "volatility_20d"
+            ],
+            "tested_params": {
+                "top_n": 20,
+                "multiplier": 1.5
+            },
+            "excess_calmar_ratio": 0.16022410767921832,
+            "absolute_calmar_ratio": 0.49080826287074336
+        },
+        {
+            "combo_index": 1,
+            "factor_combination": [
+                "profit_ratio_estimate",
+                "return_60d",
+                "turnover_rate",
+                "vol_ratio",
+                "volatility_20d"
+            ],
+            "tested_params": {
+                "top_n": 10,
+                "multiplier": 1.2
+            },
+            "excess_calmar_ratio": 0.08102495772879999,
+            "absolute_calmar_ratio": 0.3063886514545364
+        },
+        {
+            "combo_index": 1,
+            "factor_combination": [
+                "profit_ratio_estimate",
+                "return_60d",
+                "turnover_rate",
+                "vol_ratio",
+                "volatility_20d"
+            ],
+            "tested_params": {
+                "top_n": 10,
+                "multiplier": 1.0
+            },
+            "excess_calmar_ratio": 0.08102495772879999,
+            "absolute_calmar_ratio": 0.3063886514545364
+        },
+        {
+            "combo_index": 1,
+            "factor_combination": [
+                "profit_ratio_estimate",
+                "return_60d",
+                "turnover_rate",
+                "vol_ratio",
+                "volatility_20d"
+            ],
+            "tested_params": {
+                "top_n": 10,
+                "multiplier": 1.5
+            },
+            "excess_calmar_ratio": 0.08102495772879999,
+            "absolute_calmar_ratio": 0.3063886514545364
+        },
+        {
+            "combo_index": 1,
+            "factor_combination": [
+                "profit_ratio_estimate",
+                "return_60d",
+                "turnover_rate",
+                "vol_ratio",
+                "volatility_20d"
+            ],
+            "tested_params": {
+                "top_n": 30,
+                "multiplier": 1.2
+            },
+            "excess_calmar_ratio": 0.14431620719362653,
+            "absolute_calmar_ratio": 0.5078804105028768
+        },
+        {
+            "combo_index": 1,
+            "factor_combination": [
+                "profit_ratio_estimate",
+                "return_60d",
+                "turnover_rate",
+                "vol_ratio",
+                "volatility_20d"
+            ],
+            "tested_params": {
+                "top_n": 30,
+                "multiplier": 1.0
+            },
+            "excess_calmar_ratio": 0.14431620719362653,
+            "absolute_calmar_ratio": 0.5078804105028768
+        },
+        {
+            "combo_index": 1,
+            "factor_combination": [
+                "profit_ratio_estimate",
+                "return_60d",
+                "turnover_rate",
+                "vol_ratio",
+                "volatility_20d"
+            ],
+            "tested_params": {
+                "top_n": 30,
+                "multiplier": 1.5
+            },
+            "excess_calmar_ratio": 0.14431620719362653,
+            "absolute_calmar_ratio": 0.5078804105028768
+        },
+        {
+            "combo_index": 2,
+            "factor_combination": [
+                "north_net_inflow_ratio",
+                "return_5d",
+                "turnover_rate_20d"
+            ],
+            "tested_params": {
+                "top_n": 20,
+                "multiplier": 1.2
+            },
+            "excess_calmar_ratio": 0.20823953050210195,
+            "absolute_calmar_ratio": 0.6680531322641179
+        },
+        {
+            "combo_index": 2,
+            "factor_combination": [
+                "north_net_inflow_ratio",
+                "return_5d",
+                "turnover_rate_20d"
+            ],
+            "tested_params": {
+                "top_n": 20,
+                "multiplier": 1.0
+            },
+            "excess_calmar_ratio": 0.20823953050210195,
+            "absolute_calmar_ratio": 0.6680531322641179
+        },
+        {
+            "combo_index": 2,
+            "factor_combination": [
+                "north_net_inflow_ratio",
+                "return_5d",
+                "turnover_rate_20d"
+            ],
+            "tested_params": {
+                "top_n": 20,
+                "multiplier": 1.5
+            },
+            "excess_calmar_ratio": 0.20823953050210195,
+            "absolute_calmar_ratio": 0.6680531322641179
+        },
+        {
+            "combo_index": 2,
+            "factor_combination": [
+                "north_net_inflow_ratio",
+                "return_5d",
+                "turnover_rate_20d"
+            ],
+            "tested_params": {
+                "top_n": 10,
+                "multiplier": 1.2
+            },
+            "excess_calmar_ratio": 0.7604678167944114,
+            "absolute_calmar_ratio": 1.113370668915431
+        },
+        {
+            "combo_index": 2,
+            "factor_combination": [
+                "north_net_inflow_ratio",
+                "return_5d",
+                "turnover_rate_20d"
+            ],
+            "tested_params": {
+                "top_n": 10,
+                "multiplier": 1.0
+            },
+            "excess_calmar_ratio": 0.7604678167944114,
+            "absolute_calmar_ratio": 1.113370668915431
+        },
+        {
+            "combo_index": 2,
+            "factor_combination": [
+                "north_net_inflow_ratio",
+                "return_5d",
+                "turnover_rate_20d"
+            ],
+            "tested_params": {
+                "top_n": 10,
+                "multiplier": 1.5
+            },
+            "excess_calmar_ratio": 0.7604678167944114,
+            "absolute_calmar_ratio": 1.113370668915431
+        },
+        {
+            "combo_index": 2,
+            "factor_combination": [
+                "north_net_inflow_ratio",
+                "return_5d",
+                "turnover_rate_20d"
+            ],
+            "tested_params": {
+                "top_n": 30,
+                "multiplier": 1.2
+            },
+            "excess_calmar_ratio": 0.23034299004488956,
+            "absolute_calmar_ratio": 0.6238062966950076
+        },
+        {
+            "combo_index": 2,
+            "factor_combination": [
+                "north_net_inflow_ratio",
+                "return_5d",
+                "turnover_rate_20d"
+            ],
+            "tested_params": {
+                "top_n": 30,
+                "multiplier": 1.0
+            },
+            "excess_calmar_ratio": 0.23034299004488956,
+            "absolute_calmar_ratio": 0.6238062966950076
+        },
+        {
+            "combo_index": 2,
+            "factor_combination": [
+                "north_net_inflow_ratio",
+                "return_5d",
+                "turnover_rate_20d"
+            ],
+            "tested_params": {
+                "top_n": 30,
+                "multiplier": 1.5
+            },
+            "excess_calmar_ratio": 0.23034299004488956,
+            "absolute_calmar_ratio": 0.6238062966950076
+        }
+    ]
+}

@@ -317,9 +317,8 @@ def main():
     print(f"Bull 模型测试集（2023-2026）超额卡玛比率: {excess_calmar:.2f}")
     
     # 10. 保存配置
-    models_dir = "models"
-    os.makedirs(models_dir, exist_ok=True)
-    proposed_pkl_path = os.path.join(models_dir, "bull_weights_proposed.pkl")
+    os.makedirs(os.path.dirname(PATHS.models.bull_weights_proposed), exist_ok=True)
+    proposed_pkl_path = PATHS.models.bull_weights_proposed
     
     with open(proposed_pkl_path, "wb") as f:
         pickle.dump({

@@ -117,25 +117,59 @@ def load_weights_by_regime(regime):
     - Dark / Bear ➡️ 返回防御型因子组合（质量评分、低换手、低贝塔）
     """
     import pickle
+    
+    # 默认金牌配置兜底（防模型缺失或损坏崩溃）
+    default_range_factors = ['excess_return_20d', 'north_net_inflow_ratio', 'profit_ratio_estimate', 'return_60d', 'volatility_60d']
+    default_range_weights = {
+        'excess_return_20d': -0.21552779798184213, 
+        'north_net_inflow_ratio': -0.1469390944219598, 
+        'profit_ratio_estimate': -0.2732235551615633, 
+        'return_60d': -0.2629017648720119, 
+        'volatility_60d': -0.10140778756262296
+    }
+    default_bull_factors = ['volatility_60d', 'volatility_20d', 'turnover_rate']
+    default_bull_weights = {
+        'volatility_60d': -0.6040557309731197, 
+        'volatility_20d': 0.1823874286481834, 
+        'turnover_rate': -0.21355684037869677
+    }
+
     r = str(regime).upper()
     if r == "RANGE":
         path = PATHS.models.regime_weights
         if not os.path.exists(path):
             path = PATHS.models.regime_weights_proposed
-        if os.path.exists(path):
-            with open(path, "rb") as f:
-                data = pickle.load(f)
-            return data.get("range_factors", []), data.get("range_weights", {})
-        else:
-            return [], {}
+        
+        try:
+            if os.path.exists(path):
+                with open(path, "rb") as f:
+                    data = pickle.load(f)
+                factors = data.get("range_factors", [])
+                weights = data.get("range_weights", {})
+                if factors and weights:
+                    return factors, weights
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"⚠️ 震荡市模型文件加载失败，执行金牌降级保护: {e}")
+            
+        return default_range_factors, default_range_weights
+        
     elif r == "BULL":
         path = PATHS.models.bull_weights_proposed
-        if os.path.exists(path):
-            with open(path, "rb") as f:
-                data = pickle.load(f)
-            return data.get("bull_factors", []), data.get("bull_weights", {})
-        else:
-            return [], {}
+        try:
+            if os.path.exists(path):
+                with open(path, "rb") as f:
+                    data = pickle.load(f)
+                factors = data.get("bull_factors", [])
+                weights = data.get("bull_weights", {})
+                if factors and weights:
+                    return factors, weights
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"⚠️ 牛市模型文件加载失败，执行金牌降级保护: {e}")
+            
+        return default_bull_factors, default_bull_weights
+        
     else:
         # Dark / Bear 状态：返回防御型因子组合
         # 权重配置：质量评分(40%)、低换手(30%)、低贝塔(20%)、ROE(10%)

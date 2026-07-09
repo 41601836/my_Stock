@@ -65,10 +65,23 @@ def recommend_adaptive_portfolio(df_aligned, val_report, search_report, new_fact
     
     for f in new_portfolio_factors:
         # 获取其带符号的 IC 均值
-        if f in base_pool:
+        if f in val_report:
             ic_val = val_report[f]["recent_ic"]
-        else:
+        elif f in search_report:
             ic_val = search_report[f]["mean_ic"]
+        else:
+            # 现场计算 recent_ic 作为兜底，保障进化寻优鲁棒性
+            try:
+                df_sub = df_aligned.copy()
+                df_sub["future_return_5d_rank"] = df_sub.groupby("trade_date")["future_return_5d"].rank()
+                df_sub[f + "_rank"] = df_sub.groupby("trade_date")[f].rank()
+                df_ic_grouped = df_sub.groupby("trade_date")[f + "_rank"].corrwith(df_sub["future_return_5d_rank"], method="pearson")
+                recent_weeks = config.get("validation", {}).get("recent_weeks_lookback", 52)
+                ic_val = df_ic_grouped.tail(recent_weeks).mean()
+                if np.isnan(ic_val):
+                    ic_val = 0.0
+            except Exception:
+                ic_val = 0.0
             
         # 如果是正交特权因子，绝对值乘以加成系数，保留正负号
         if f in special_factors:

@@ -1,0 +1,372 @@
+import React, { useState, useEffect } from 'react'
+import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts'
+import { RefreshCw, TrendingUp, Flame, ShieldAlert, ArrowUpRight, ArrowDownRight, Compass, Zap, Activity, Info } from 'lucide-react'
+
+const regimeConfig = {
+  BULL: { label: 'BULL  牛市全速', subLabel: '火力全开，满仓跟进', icon: Flame, color: '#10b981', bg: 'rgba(16,185,129,0.08)', border: 'rgba(16,185,129,0.25)', glow: '0 0 24px rgba(16,185,129,0.15)' },
+  RANGE: { label: 'RANGE  震荡轮动', subLabel: '高抛低吸，快进快出', icon: Compass, color: '#38bdf8', bg: 'rgba(56,189,248,0.08)', border: 'rgba(56,189,248,0.25)', glow: '0 0 24px rgba(56,189,248,0.15)' },
+  BEAR: { label: 'BEAR  避险模式', subLabel: '强制减仓 50% 或清仓', icon: ShieldAlert, color: '#f43f5e', bg: 'rgba(244,63,94,0.08)', border: 'rgba(244,63,94,0.25)', glow: '0 0 24px rgba(244,63,94,0.15)' },
+}
+
+function getTempLevel(median) {
+  if (median == null) return { label: '数据加载中', color: '#6b7280' }
+  if (median < 15) return { label: '🚨 极端冰点 · 抄底窗口', color: '#f43f5e', bg: 'rgba(244,63,94,0.1)' }
+  if (median < 35) return { label: '⚠️ 低温偏冷 · 谨慎布局', color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' }
+  if (median < 65) return { label: '✅ 健康中庸 · 正常操作', color: '#10b981', bg: 'rgba(16,185,129,0.1)' }
+  if (median < 80) return { label: '⚠️ 偏热警戒 · 轻仓止盈', color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' }
+  return { label: '🔥 过热高危 · 紧急减仓', color: '#f43f5e', bg: 'rgba(244,63,94,0.1)' }
+}
+
+const CustomTooltip = ({ active, payload, label }) => {
+  if (!active || !payload?.length) return null
+  return (
+    <div style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: 10, padding: '10px 14px', fontSize: 11, fontFamily: 'monospace', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}>
+      <div style={{ color: '#8b949e', marginBottom: 6 }}>{label}</div>
+      {payload.map((p, i) => (
+        <div key={i} style={{ color: p.fill, marginBottom: 2 }}>{p.name}: <span style={{ color: '#e6edf3', fontWeight: 700 }}>{p.value?.toFixed(2)}%</span></div>
+      ))}
+    </div>
+  )
+}
+
+export default function Overview() {
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+
+  const fetchOverview = async () => {
+    setLoading(true)
+    try {
+      const res = await fetch('http://localhost:8000/api/market/overview')
+      if (!res.ok) throw new Error('Failed to fetch market overview')
+      setData(await res.json())
+      setError(null)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { fetchOverview() }, [])
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 320 }}>
+        <div style={{ textAlign: 'center', color: '#6e7681' }}>
+          <div style={{ fontSize: 12, fontFamily: 'monospace', marginTop: 12 }}>正在载入大盘量化温度数据...</div>
+        </div>
+      </div>
+    )
+  }
+  if (error) {
+    return (
+      <div style={{ padding: '16px 20px', borderRadius: 12, background: 'rgba(244,63,94,0.08)', border: '1px solid rgba(244,63,94,0.3)', color: '#f87171', fontSize: 12, fontFamily: 'monospace' }}>
+        ❌ {error}
+      </div>
+    )
+  }
+
+  const pieData = [
+    { name: '上涨', value: data?.adv_dec?.up || 0, color: '#10b981' },
+    { name: '下跌', value: data?.adv_dec?.down || 0, color: '#f43f5e' },
+    { name: '平盘', value: data?.adv_dec?.flat || 0, color: '#374151' },
+  ]
+  const totalStocks = pieData.reduce((s, d) => s + d.value, 0)
+  const upPct = totalStocks > 0 ? (pieData[0].value / totalStocks * 100).toFixed(1) : 0
+  const median = data?.temperature?.median_winner
+  const tempLevel = getTempLevel(median)
+  const regime = data?.regime || 'RANGE'
+  const regCfg = regimeConfig[regime] || regimeConfig.RANGE
+  const RegIcon = regCfg.icon
+  const maxFlow = Math.max(...[...(data?.inflow_rank || []), ...(data?.outflow_rank || [])].map(i => Math.abs(i.flow_value)), 1.0)
+  const dateStr = data?.date ? `${data.date.substring(0,4)}-${data.date.substring(4,6)}-${data.date.substring(6)}` : '—'
+
+  const card = (children, accentColor = '#a78bfa', extraStyle = {}) => ({
+    background: 'linear-gradient(135deg, #0d1117 0%, #161b22 100%)',
+    border: '1px solid #21262d',
+    borderRadius: 16,
+    padding: '20px 22px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 12,
+    position: 'relative',
+    overflow: 'hidden',
+    ...extraStyle,
+  })
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20, fontFamily: '"Inter", "SF Pro Display", sans-serif' }}>
+
+      {/* 顶部状态栏 */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 18px', background: '#0d1117', border: '1px solid #21262d', borderRadius: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#10b981', boxShadow: '0 0 8px #10b981' }} />
+          <span style={{ fontSize: 11, color: '#8b949e', fontFamily: 'monospace' }}>市场宏观全览</span>
+          <span style={{ fontSize: 11, color: '#30363d' }}>·</span>
+          <span style={{ fontSize: 11, color: '#6e7681', fontFamily: 'monospace' }}>基准日 {dateStr}</span>
+        </div>
+        <button onClick={fetchOverview} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 12px', borderRadius: 8, background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.25)', color: '#a78bfa', fontSize: 11, cursor: 'pointer', fontFamily: 'monospace' }}>
+          <RefreshCw size={12} /> 刷新
+        </button>
+      </div>
+
+      {/* 第一行：4 核心指标卡 */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+
+        {/* 赚钱效应 */}
+        <div style={card(null, '#10b981')}>
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: 'linear-gradient(90deg, transparent, #10b98160, transparent)' }} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 10, color: '#8b949e', fontFamily: 'monospace', letterSpacing: '0.05em' }}>今日赚钱效应  ADV/DEC</span>
+            <span style={{ fontSize: 9, padding: '2px 8px', borderRadius: 20, background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.35)', color: '#10b981', fontFamily: 'monospace' }}>上涨 {upPct}%</span>
+          </div>
+          <div style={{ height: 120, position: 'relative' }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={pieData} cx="50%" cy="50%" innerRadius={36} outerRadius={50} paddingAngle={2} dataKey="value" startAngle={90} endAngle={-270}>
+                  {pieData.map((e, i) => <Cell key={i} fill={e.color} strokeWidth={0} />)}
+                </Pie>
+              </PieChart>
+            </ResponsiveContainer>
+            <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', textAlign: 'center' }}>
+              <div style={{ fontSize: 16, fontWeight: 800, color: '#10b981', fontFamily: 'monospace' }}>{upPct}%</div>
+              <div style={{ fontSize: 9, color: '#6e7681' }}>上涨占比</div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {pieData.map((d, i) => (
+              <div key={i} style={{ flex: 1, textAlign: 'center', padding: '6px 2px', borderRadius: 8, background: `${d.color}10`, border: `1px solid ${d.color}25` }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: d.color, fontFamily: 'monospace' }}>{d.value}</div>
+                <div style={{ fontSize: 9, color: '#6e7681', marginTop: 1 }}>{d.name}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ background: 'rgba(139,148,158,0.05)', border: '1px solid #21262d', borderRadius: 8, padding: '7px 10px', fontSize: 10, color: '#6e7681', fontFamily: 'monospace', lineHeight: 1.6 }}>
+            <Info size={10} style={{ display: 'inline', marginRight: 4, verticalAlign: 'middle', color: '#8b949e' }} />
+            上涨数 &gt; 下跌代表大盘赚钱效应好，利于新开仓。
+          </div>
+        </div>
+
+        {/* 筹码温度 */}
+        <div style={card(null, '#f59e0b')}>
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: 'linear-gradient(90deg, transparent, #f59e0b60, transparent)' }} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 10, color: '#8b949e', fontFamily: 'monospace', letterSpacing: '0.05em' }}>筹码获利中位数  WINNER RATE</span>
+          </div>
+          <div style={{ fontSize: 36, fontWeight: 800, color: '#f59e0b', fontFamily: 'monospace', lineHeight: 1 }}>
+            {median}<span style={{ fontSize: 14, marginLeft: 4, opacity: 0.7 }}>%</span>
+          </div>
+          <div>
+            <div style={{ height: 5, borderRadius: 3, background: '#21262d', overflow: 'hidden', marginBottom: 10 }}>
+              <div style={{ height: '100%', width: `${Math.min(median || 0, 100)}%`, borderRadius: 3, background: 'linear-gradient(90deg, #38bdf8, #f59e0b, #f43f5e)', transition: 'width 0.8s ease' }} />
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+              <div style={{ padding: '7px 8px', borderRadius: 8, background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)', textAlign: 'center' }}>
+                <div style={{ fontSize: 9, color: '#6e7681', marginBottom: 3 }}>超买 (≥50%)</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: '#10b981', fontFamily: 'monospace' }}>{data?.temperature?.overbought_ratio}%</div>
+              </div>
+              <div style={{ padding: '7px 8px', borderRadius: 8, background: 'rgba(244,63,94,0.06)', border: '1px solid rgba(244,63,94,0.2)', textAlign: 'center' }}>
+                <div style={{ fontSize: 9, color: '#6e7681', marginBottom: 3 }}>超跌 (&lt;10%)</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: '#f43f5e', fontFamily: 'monospace' }}>{data?.temperature?.oversold_ratio}%</div>
+              </div>
+            </div>
+          </div>
+          <div style={{ padding: '6px 10px', borderRadius: 8, background: tempLevel.bg || 'rgba(16,185,129,0.1)', border: `1px solid ${tempLevel.color}30`, color: tempLevel.color, fontSize: 10, fontFamily: 'monospace', textAlign: 'center', fontWeight: 700 }}>
+            {tempLevel.label}
+          </div>
+          <div style={{ background: 'rgba(139,148,158,0.05)', border: '1px solid #21262d', borderRadius: 8, padding: '7px 10px', fontSize: 10, color: '#6e7681', fontFamily: 'monospace', lineHeight: 1.6 }}>
+            <Info size={10} style={{ display: 'inline', marginRight: 4, verticalAlign: 'middle', color: '#8b949e' }} />
+            中位数 &lt;15% + 超跌 &gt;40% → 黄金抄底；中位数 &gt;75% + 超买 &gt;60% → 紧急减仓。
+          </div>
+        </div>
+
+        {/* 市场路由 */}
+        <div style={card(null, regCfg.color)}>
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: `linear-gradient(90deg, transparent, ${regCfg.color}60, transparent)` }} />
+          <span style={{ fontSize: 10, color: '#8b949e', fontFamily: 'monospace', letterSpacing: '0.05em' }}>策略决策路由  MARKET REGIME</span>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, padding: '18px 12px', borderRadius: 12, background: regCfg.bg, border: `1px solid ${regCfg.border}`, boxShadow: regCfg.glow }}>
+            <RegIcon size={32} color={regCfg.color} style={{ filter: `drop-shadow(0 0 8px ${regCfg.color}60)` }} />
+            <div style={{ fontSize: 13, fontWeight: 800, color: regCfg.color, fontFamily: 'monospace', letterSpacing: '0.06em', textAlign: 'center' }}>{regCfg.label}</div>
+            <div style={{ fontSize: 10, color: '#8b949e', textAlign: 'center' }}>{regCfg.subLabel}</div>
+          </div>
+          <div style={{ background: 'rgba(139,148,158,0.05)', border: '1px solid #21262d', borderRadius: 8, padding: '7px 10px', fontSize: 10, color: '#6e7681', fontFamily: 'monospace', lineHeight: 1.6 }}>
+            <Info size={10} style={{ display: 'inline', marginRight: 4, verticalAlign: 'middle', color: '#8b949e' }} />
+            BULL 满仓；RANGE 快进快出；BEAR 强制减仓 50% 或清仓。
+          </div>
+        </div>
+
+        {/* 策略参数 */}
+        <div style={card(null, '#a78bfa')}>
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: 'linear-gradient(90deg, transparent, #a78bfa60, transparent)' }} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 10, color: '#8b949e', fontFamily: 'monospace', letterSpacing: '0.05em' }}>策略引擎参数  CONFIG</span>
+            <span style={{ fontSize: 9, padding: '2px 8px', borderRadius: 20, background: 'rgba(167,139,250,0.15)', border: '1px solid rgba(167,139,250,0.35)', color: '#a78bfa', fontFamily: 'monospace' }}>LIVE</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 7, flex: 1 }}>
+            {[
+              { k: '因子配置', v: 'Custom_V2 自适应' },
+              { k: '寻优引擎', v: '胜率猎手 GA' },
+              { k: '风险模型', v: 'MVO Ledoit-Wolf' },
+              { k: '行业上限', v: '30% / 60%' },
+            ].map(({ k, v }) => (
+              <div key={k} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', borderRadius: 8, background: 'rgba(167,139,250,0.04)', border: '1px solid rgba(167,139,250,0.1)' }}>
+                <span style={{ fontSize: 10, color: '#6e7681', fontFamily: 'monospace' }}>{k}</span>
+                <span style={{ fontSize: 10, color: '#a78bfa', fontFamily: 'monospace', fontWeight: 700 }}>{v}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{ padding: '6px 10px', borderRadius: 8, background: 'rgba(56,189,248,0.08)', border: '1px solid rgba(56,189,248,0.2)', fontSize: 10, color: '#38bdf8', fontFamily: 'monospace', textAlign: 'center' }}>
+            行业持仓风控已锁定
+          </div>
+        </div>
+      </div>
+
+      {/* 第二行：风格轮动 */}
+      <div style={{ background: 'linear-gradient(135deg, #0d1117 0%, #161b22 100%)', border: '1px solid #21262d', borderRadius: 16, padding: '22px 24px', position: 'relative', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: 'linear-gradient(90deg, transparent, #a78bfa60, transparent)' }} />
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <TrendingUp size={15} color="#a78bfa" />
+            <span style={{ fontSize: 13, fontWeight: 700, color: '#e6edf3' }}>近 5 日主力风格强弱走势</span>
+            <span style={{ fontSize: 10, color: '#4b5563', fontFamily: 'monospace' }}>STYLE ROTATION</span>
+          </div>
+          <p style={{ fontSize: 11, color: '#6e7681', marginTop: 4 }}>全市场三类风格个股的日均涨跌幅，诊断主力资金当日偏好方向</p>
+        </div>
+        <div style={{ height: 250 }}>
+          {data?.style_rotation?.length > 0 ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={data.style_rotation} margin={{ top: 4, right: 8, left: -20, bottom: 0 }} barGap={4}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#21262d" vertical={false} />
+                <XAxis dataKey="date" stroke="#4b5563" fontSize={10} tickLine={false} axisLine={false} fontFamily="monospace" />
+                <YAxis stroke="#4b5563" fontSize={10} tickLine={false} axisLine={false} unit="%" fontFamily="monospace" />
+                <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
+                <Legend wrapperStyle={{ fontSize: 10, paddingTop: 14, fontFamily: 'monospace' }} formatter={(v) => <span style={{ color: '#8b949e' }}>{v}</span>} />
+                <Bar name="💜 题材炒作 (游资)" dataKey="高换手风格 (Turnover)" fill="#c084fc" radius={[4,4,0,0]} maxBarSize={36} />
+                <Bar name="💚 强庄控盘 (机构)" dataKey="筹码锁仓风格 (Chips)" fill="#10b981" radius={[4,4,0,0]} maxBarSize={36} />
+                <Bar name="💛 资金扫货 (主力)" dataKey="大单大市风格 (Inflow)" fill="#f59e0b" radius={[4,4,0,0]} maxBarSize={36} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#4b5563', fontSize: 12, fontFamily: 'monospace' }}>暂无风格轮动数据</div>
+          )}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginTop: 16 }}>
+          {[
+            { dot: '#c084fc', title: '怎么看 READ', text: '看最近一天的柱子方向与长度。柱朝上越长，当天该风格股涨得越猛。' },
+            { dot: '#10b981', title: '怎么买 EXECUTE', text: '💛 橙柱最高 → 优先大单流入高的个股；💜 紫柱最高 → 适当小仓位配短线题材。' },
+            { dot: '#f43f5e', title: '避险灯 SHIELD', text: '三柱多日齐刷刷朝下 & 均值 < -1.5%，系统性踩踏，立刻清仓现金为王。' },
+          ].map(({ dot, title, text }) => (
+            <div key={title} style={{ padding: '10px 12px', borderRadius: 10, background: '#0d1117', border: '1px solid #21262d' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                <div style={{ width: 7, height: 7, borderRadius: '50%', background: dot }} />
+                <span style={{ fontSize: 10, fontWeight: 700, color: '#8b949e', fontFamily: 'monospace' }}>{title}</span>
+              </div>
+              <p style={{ fontSize: 10, color: '#6e7681', lineHeight: 1.6, margin: 0 }}>{text}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 第三行：游资热点 */}
+      <div style={{ background: 'linear-gradient(135deg, #0d1117 0%, #12101e 100%)', border: '1px solid #2d1f4e', borderRadius: 16, padding: '22px 24px', position: 'relative', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: 'linear-gradient(90deg, transparent, #c084fc80, transparent)' }} />
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Zap size={15} color="#c084fc" />
+            <span style={{ fontSize: 13, fontWeight: 700, color: '#e6edf3' }}>今日游资热点题材排行</span>
+            <span style={{ fontSize: 10, color: '#4b5563', fontFamily: 'monospace' }}>HOT MONEY THEMES</span>
+          </div>
+          <p style={{ fontSize: 11, color: '#6e7681', marginTop: 4 }}>换手率超高 + 主力大单净流入为正 = 游资真实吸筹题材（换手权重 60% + 净买入 40%）</p>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12 }}>
+          {data?.hot_money_themes?.length > 0 ? data.hot_money_themes.map((item, i) => {
+            const rankColors = ['#f59e0b', '#94a3b8', '#b45309', '#6b7280', '#6b7280']
+            const rc = rankColors[i] || '#6b7280'
+            return (
+              <div key={i} style={{ background: 'rgba(167,139,250,0.04)', border: `1px solid rgba(167,139,250,${0.15 - i * 0.02})`, borderRadius: 12, padding: '14px', display: 'flex', flexDirection: 'column', gap: 10, position: 'relative', overflow: 'hidden' }}>
+                <div style={{ position: 'absolute', top: 8, right: 8, width: 20, height: 20, borderRadius: '50%', background: `${rc}20`, border: `1px solid ${rc}50`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <span style={{ fontSize: 9, fontWeight: 800, color: rc, fontFamily: 'monospace' }}>#{i+1}</span>
+                </div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#e6edf3', paddingRight: 28, lineHeight: 1.3 }} title={item.sector}>{item.sector}</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, fontFamily: 'monospace' }}>
+                    <span style={{ color: '#6e7681' }}>换手率</span>
+                    <span style={{ color: '#e6edf3', fontWeight: 700 }}>{item.avg_turnover}%</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, fontFamily: 'monospace' }}>
+                    <span style={{ color: '#6e7681' }}>净买入</span>
+                    <span style={{ color: '#f87171', fontWeight: 700 }}>+{item.net_inflow} 亿</span>
+                  </div>
+                </div>
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: '#6e7681', fontFamily: 'monospace', marginBottom: 4 }}>
+                    <span>游资热度</span>
+                    <span style={{ color: '#c084fc', fontWeight: 700 }}>{item.hot_score}</span>
+                  </div>
+                  <div style={{ height: 4, borderRadius: 3, background: '#1a1025', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${item.hot_score}%`, borderRadius: 3, background: 'linear-gradient(90deg, #7c3aed, #c084fc)', boxShadow: '0 0 6px rgba(192,132,252,0.4)', transition: 'width 1s ease' }} />
+                  </div>
+                </div>
+              </div>
+            )
+          }) : (
+            <div style={{ gridColumn: '1/-1', textAlign: 'center', color: '#4b5563', fontSize: 12, fontFamily: 'monospace', padding: '32px 0' }}>暂无游资热度题材排行</div>
+          )}
+        </div>
+      </div>
+
+      {/* 第四行：资金流榜 */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        {/* 净流入 */}
+        <div style={{ background: 'linear-gradient(135deg, #0d1117 0%, #0d1a12 100%)', border: '1px solid #1a3024', borderRadius: 16, padding: '20px 22px', position: 'relative', overflow: 'hidden' }}>
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: 'linear-gradient(90deg, transparent, #10b98160, transparent)' }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <ArrowUpRight size={14} color="#10b981" />
+            <span style={{ fontSize: 12, fontWeight: 700, color: '#e6edf3' }}>大资金净流入 TOP 5</span>
+            <span style={{ fontSize: 10, color: '#4b5563', fontFamily: 'monospace' }}>INFLOW</span>
+          </div>
+          <p style={{ fontSize: 10, color: '#6e7681', marginBottom: 16 }}>主力大买方向 — 优先跟进上榜题材的个股</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {data?.inflow_rank?.length > 0 ? data.inflow_rank.map((item, i) => (
+              <div key={i}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <span style={{ fontSize: 11, fontFamily: 'monospace', color: '#e6edf3', fontWeight: 600 }}>{item.sector}</span>
+                  <span style={{ fontSize: 11, fontFamily: 'monospace', color: '#10b981', fontWeight: 700 }}>+{item.flow_value} 亿</span>
+                </div>
+                <div style={{ height: 5, borderRadius: 3, background: '#0d2018', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${(Math.abs(item.flow_value)/maxFlow*100).toFixed(1)}%`, borderRadius: 3, background: 'linear-gradient(90deg, #047857, #10b981)', boxShadow: '0 0 6px rgba(16,185,129,0.3)', transition: 'width 0.8s ease' }} />
+                </div>
+              </div>
+            )) : <div style={{ color: '#4b5563', fontSize: 11, fontFamily: 'monospace', padding: '20px 0', textAlign: 'center' }}>暂无数据</div>}
+          </div>
+        </div>
+
+        {/* 净流出 */}
+        <div style={{ background: 'linear-gradient(135deg, #0d1117 0%, #1a0d0d 100%)', border: '1px solid #301a1a', borderRadius: 16, padding: '20px 22px', position: 'relative', overflow: 'hidden' }}>
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: 'linear-gradient(90deg, transparent, #f43f5e60, transparent)' }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <ArrowDownRight size={14} color="#f43f5e" />
+            <span style={{ fontSize: 12, fontWeight: 700, color: '#e6edf3' }}>大资金净流出 TOP 5</span>
+            <span style={{ fontSize: 10, color: '#4b5563', fontFamily: 'monospace' }}>OUTFLOW</span>
+          </div>
+          <p style={{ fontSize: 10, color: '#6e7681', marginBottom: 16 }}>主力出货方向 — 上榜题材反弹勿追，防阴跌</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {data?.outflow_rank?.length > 0 ? data.outflow_rank.map((item, i) => (
+              <div key={i}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <span style={{ fontSize: 11, fontFamily: 'monospace', color: '#e6edf3', fontWeight: 600 }}>{item.sector}</span>
+                  <span style={{ fontSize: 11, fontFamily: 'monospace', color: '#f43f5e', fontWeight: 700 }}>{item.flow_value} 亿</span>
+                </div>
+                <div style={{ height: 5, borderRadius: 3, background: '#200d0d', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${(Math.abs(item.flow_value)/maxFlow*100).toFixed(1)}%`, borderRadius: 3, background: 'linear-gradient(90deg, #9f1239, #f43f5e)', boxShadow: '0 0 6px rgba(244,63,94,0.3)', transition: 'width 0.8s ease' }} />
+                </div>
+              </div>
+            )) : <div style={{ color: '#4b5563', fontSize: 11, fontFamily: 'monospace', padding: '20px 0', textAlign: 'center' }}>暂无数据</div>}
+          </div>
+        </div>
+      </div>
+
+    </div>
+  )
+}

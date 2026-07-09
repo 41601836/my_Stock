@@ -1,17 +1,25 @@
 candidate_factors:
 - return_5d
+- return_10d
 - return_20d
 - return_60d
+- return_120d
 - excess_return_20d
+- volatility_10d
 - volatility_20d
 - volatility_60d
+- volatility_120d
 - skewness_20d
 - max_drawdown_20d
+- max_drawdown_60d
 - atr_ratio
 - pe_ttm
 - pb
 - roe
 - turnover_rate
+- turnover_rate_5d
+- turnover_rate_20d
 - north_net_inflow_ratio
 - profit_ratio_estimate
 - chip_concentration
+- vol_ratio

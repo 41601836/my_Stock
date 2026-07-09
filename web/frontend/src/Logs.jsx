@@ -2,7 +2,18 @@ import React, { useState, useEffect } from 'react'
 import { Terminal, Zap, CheckCircle, Clock, ChevronRight } from 'lucide-react'
 
 function Logs() {
-  const [agentData, setAgentData] = useState({ status: 'IDLE', recent_logs: [], trajectory: [], last_updated: '' })
+  const [agentData, setAgentData] = useState({ 
+    status: 'IDLE', 
+    recent_logs: [], 
+    trajectory: [], 
+    last_updated: '',
+    best_results: {
+      success: false,
+      best_combination: '—',
+      best_params: '—',
+      best_excess_calmar: 0.0
+    }
+  })
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -117,17 +128,21 @@ function Logs() {
           <div className="p-4 bg-[#0D1220]/60 rounded-xl border border-purple-500/20 space-y-1.5">
             <span className="text-gray-400">✅ 达标组合</span>
             <div className="text-emerald-400 font-bold leading-relaxed">
-              excess_return_20d · north_net_inflow_ratio · profit_ratio_estimate · return_60d · volatility_60d
+              {agentData.best_results?.best_combination || '—'}
             </div>
           </div>
           <div className="p-4 bg-[#0D1220]/60 rounded-xl border border-purple-500/20 space-y-1.5">
             <span className="text-gray-400">⚙️ 最佳超参配置</span>
-            <div className="text-purple-400 font-bold">top_n = 30 · multiplier = 1.5</div>
+            <div className="text-purple-400 font-bold">
+              {agentData.best_results?.best_params || '—'}
+            </div>
           </div>
           <div className="p-4 bg-[#0D1220]/60 rounded-xl border border-purple-500/20 space-y-1.5">
             <span className="text-gray-400">📈 最高超额卡玛</span>
-            <div className="text-yellow-400 font-bold text-2xl">0.5465</div>
-            <div className="text-gray-500">超额年化: +17.37% | 最大超额回撤: -31.79%</div>
+            <div className="text-yellow-400 font-bold text-2xl">
+              {agentData.best_results?.best_excess_calmar?.toFixed(4) || '0.0000'}
+            </div>
+            <div className="text-gray-500">超额卡玛指数组合评分表现优秀</div>
           </div>
         </div>
       </div>

@@ -19,10 +19,17 @@ import pandas as pd
 import numpy as np
 import time
 
-# 将项目根目录添加至 sys.path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-def load_data(db_path="db/stock_data.db", csv_path="market_regime_labels_v2.csv"):
+from config.paths import PATHS, startup_check
+
+startup_check()
+
+def load_data(db_path=None, csv_path=None):
+    if db_path is None:
+        db_path = PATHS.database.stock_data
+    if csv_path is None:
+        csv_path = PATHS.data.market_regime_labels_v2
     """
     加载多因子数据、行情数据并计算未来5日收益率，与状态对齐
     """
@@ -175,8 +182,8 @@ def main():
     print("🚀 开始进行 Phase 2: 2020-2026 全历史因子 IC-IR 有效性分析及筛选")
     print("=" * 80)
     
-    db_path = "db/stock_data.db"
-    csv_path = "market_regime_labels_v2.csv"
+    db_path = PATHS.database.stock_data
+    csv_path = PATHS.data.market_regime_labels_v2
     
     # 1. 载入并合并对齐数据
     try:
@@ -185,12 +192,16 @@ def main():
         print(f"❌ 数据加载失败: {e}")
         return
         
-    # 定义 18 个特征因子池名称
+    # 定义 24 个特征因子池名称（含 6 个新实验因子）
     factor_pool = [
         "return_5d", "return_20d", "return_60d", "excess_return_20d",
         "volatility_20d", "volatility_60d", "skewness_20d", "max_drawdown_20d", "atr_ratio",
         "pe_ttm", "pb", "roe", "turnover_rate",
-        "north_net_inflow_ratio", "profit_ratio_estimate", "chip_concentration"
+        "north_net_inflow_ratio", "profit_ratio_estimate", "chip_concentration",
+        # 新增实验因子
+        "return_10d", "return_120d",
+        "volatility_10d", "volatility_120d", "max_drawdown_60d",
+        "turnover_rate_5d", "turnover_rate_20d", "vol_ratio"
     ]
     
     # 2. 对震荡市 (Range) 单独进行 IC/IR 评估
@@ -249,9 +260,8 @@ def main():
         weights_dict[f] = base_w
         
     # 保存至 pickle 供后续训练和实盘模型载入
-    model_dir = "models"
-    os.makedirs(model_dir, exist_ok=True)
-    weights_path = os.path.join(model_dir, "regime_weights.pkl")
+    os.makedirs(os.path.dirname(PATHS.models.regime_weights), exist_ok=True)
+    weights_path = PATHS.models.regime_weights
     
     import pickle
     with open(weights_path, "wb") as f:

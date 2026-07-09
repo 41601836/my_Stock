@@ -40,9 +40,9 @@ def parse_args():
     parser.add_argument(
         "--mode", 
         type=str, 
-        choices=["quick", "full", "search", "simulation"], 
+        choices=["quick", "full", "search", "simulation", "jack"], 
         default="quick",
-        help="运行模式 (quick: 仅校验超额回测 | full: 全流程超额卡玛平行测试 | search: 仅挖掘新因子 | simulation: 实盘仿真模拟验证)"
+        help="运行模式 (quick: 仅校验超额回测 | full: 全流程超额卡玛平行测试 | search: 仅挖掘新因子 | simulation: 实盘仿真模拟验证 | jack: 模拟游资/Jack追涨抄底路由测试)"
     )
     parser.add_argument(
         "--auto",
@@ -343,6 +343,12 @@ def main():
         val_report, df_aligned = validate_factors(config_path)
         active_base_factors = [f for f, det in val_report.items() if det["status"] in ["VALID", "WARNING"]]
         
+        if not active_base_factors:
+            print("⚠️ [Warning] 基础验证因数据期不足全部判定失效，回退使用全量测试因子...")
+            active_base_factors = list(val_report.keys())
+            if not active_base_factors:
+                active_base_factors = ["turnover_rate"] # Extreme fallback
+        
         base_weights = {}
         for f in active_base_factors:
             base_weights[f] = val_report[f]["baseline_ic"]
@@ -464,6 +470,35 @@ def main():
             "run_mode": mode,
             "run_date": run_date,
             "simulation_metrics": routed_metrics,
+            "route_summary": route_summary
+        }
+        
+    elif mode == "jack":
+        print(f"\n⚙️  [Jack Mode] 启动游资/散户自适应模拟路由回测 (回测最近 52 周)...")
+        val_report, df_aligned = validate_factors(config_path)
+        from agent.backtester import run_jack_portfolio_backtest
+        jack_metrics, route_summary = run_jack_portfolio_backtest(df_aligned, weeks_to_backtest=52, config_path=config_path)
+        
+        print("\n" + "=" * 60)
+        print("🎯 游资/散户模式 (Jack Mode) 回测结果 (最近 52 周)")
+        print("=" * 60)
+        print(f"📊 回测时间跨度: {route_summary.get('total_weeks', 52)} 周")
+        print(f"   - 使用 Range 抄底模型周期 : {route_summary.get('range_weeks', 0)} 周")
+        print(f"   - 使用 Bull 追涨模型周期   : {route_summary.get('bull_weeks', 0)} 周")
+        print(f"   - 空仓防守避险周期         : {route_summary.get('empty_weeks', 0)} 周")
+        print("-" * 60)
+        print(f"📈 模拟绝对卡玛比率 : {jack_metrics.get('calmar_ratio', 0.0):.4f}")
+        print(f"📈 模拟超额卡玛比率 : {jack_metrics.get('excess_calmar_ratio', 0.0):.4f}")
+        print(f"📈 模拟年化绝对收益 : {jack_metrics.get('annualized_return', 0.0)*100:.2f}%")
+        print(f"📈 模拟年化超额收益 : {jack_metrics.get('excess_annual_return', 0.0)*100:.2f}%")
+        print(f"📈 模拟绝对最大回撤 : {jack_metrics.get('max_drawdown', 0.0)*100:.2f}%")
+        print(f"📈 模拟超额最大回撤 : {jack_metrics.get('excess_max_drawdown', 0.0)*100:.2f}%")
+        print("=" * 60)
+        
+        final_report = {
+            "run_mode": mode,
+            "run_date": run_date,
+            "simulation_metrics": jack_metrics,
             "route_summary": route_summary
         }
         

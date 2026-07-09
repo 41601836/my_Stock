@@ -32,7 +32,8 @@ def calculate_stock_factors(db_path=None):
         
     start_time = time.time()
     print(f"ℹ️ [Feature] 开始联合加载 2020-2026 行情、估值与资金流数据...")
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=30.0)
+    conn.execute("PRAGMA journal_mode=WAL;")
     
     query = """
         SELECT 
@@ -42,7 +43,7 @@ def calculate_stock_factors(db_path=None):
             p.low, 
             p.close, 
             p.vol,
-            p.adj_factor, 
+            IFNULL(sf.adj_factor, p.adj_factor) AS adj_factor, 
             b.turnover_rate, 
             b.pe AS pe_ttm, 
             b.pb, 
@@ -52,7 +53,8 @@ def calculate_stock_factors(db_path=None):
         FROM daily_prices p
         INNER JOIN daily_basic b ON p.ts_code = b.ts_code AND p.trade_date = b.trade_date
         LEFT JOIN moneyflow m ON p.ts_code = m.ts_code AND p.trade_date = m.trade_date
-        WHERE p.trade_date >= '20200101'
+        LEFT JOIN stk_factor sf ON p.ts_code = sf.ts_code AND p.trade_date = sf.trade_date
+        WHERE p.trade_date >= '20250101'
         ORDER BY p.ts_code, p.trade_date;
     """
     
@@ -66,15 +68,15 @@ def calculate_stock_factors(db_path=None):
     df["close_adj"] = df["close"] * df["adj_factor"]
     df["high_adj"] = df["high"] * df["adj_factor"]
     df["low_adj"] = df["low"] * df["adj_factor"]
-    df["daily_ret"] = df.groupby("ts_code")["close_adj"].pct_change(1)
+    df["daily_ret"] = df.groupby("ts_code")["close_adj"].pct_change(1, fill_method=None)
     
     # 1. 动量/反转因子计算 (含实验因子 return_10d, return_120d)
     print("ℹ️ [Feature] 计算动量与实验动量因子...")
-    df["return_5d"] = df.groupby("ts_code")["close_adj"].pct_change(5)
-    df["return_10d"] = df.groupby("ts_code")["close_adj"].pct_change(10)
-    df["return_20d"] = df.groupby("ts_code")["close_adj"].pct_change(20)
-    df["return_60d"] = df.groupby("ts_code")["close_adj"].pct_change(60)
-    df["return_120d"] = df.groupby("ts_code")["close_adj"].pct_change(120)
+    df["return_5d"] = df.groupby("ts_code")["close_adj"].pct_change(5, fill_method=None)
+    df["return_10d"] = df.groupby("ts_code")["close_adj"].pct_change(10, fill_method=None)
+    df["return_20d"] = df.groupby("ts_code")["close_adj"].pct_change(20, fill_method=None)
+    df["return_60d"] = df.groupby("ts_code")["close_adj"].pct_change(60, fill_method=None)
+    df["return_120d"] = df.groupby("ts_code")["close_adj"].pct_change(120, fill_method=None)
     
     df["mean_return_20d"] = df.groupby("trade_date")["return_20d"].transform("mean")
     df["excess_return_20d"] = df["return_20d"] - df["mean_return_20d"]
@@ -125,7 +127,7 @@ def calculate_stock_factors(db_path=None):
     
     # chip_concentration
     ma_20 = df.groupby("ts_code")["close_adj"].transform(lambda x: x.rolling(20).mean())
-    df["chip_concentration"] = (df["close_adj"] / ma_20 - 1).abs()
+    df["chip_concentration"] = (df["close_adj"] / (ma_20 + 1e-8) - 1).abs().fillna(0.0)
     
     # vol_ratio (5日/60日成交量放大系数)
     vol_5m = df.groupby("ts_code")["vol"].transform(lambda x: x.rolling(5).mean())
@@ -143,7 +145,7 @@ def calculate_stock_factors(db_path=None):
         var = group["market_excess"].rolling(60).var()
         return cov / var.replace(0, np.nan)
     
-    df["beta_60d"] = df.groupby("ts_code").apply(calc_beta).reset_index(level=0, drop=True)
+    df["beta_60d"] = df.groupby("ts_code")[["stock_excess", "market_excess"]].apply(calc_beta, include_groups=False).reset_index(level=0, drop=True)
     df["beta_60d"] = df["beta_60d"].fillna(1.0).clip(0.1, 3.0)
     
     # 6. 质量防御因子 - 现金流/负债比近似 (基于 ROE 和 PB 的质量评分)
@@ -181,7 +183,13 @@ def calculate_stock_factors(db_path=None):
     df_clean = df[cols_to_save].dropna(subset=["volatility_120d", "return_120d"]).reset_index(drop=True)
     
     table_name = "factor_values"
-    df_clean.to_sql(table_name, conn, if_exists="replace", index=False)
+    try:
+        conn.execute(f"DROP TABLE IF EXISTS {table_name}")
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Failed to drop table {table_name}: {e}")
+        pass
+    df_clean.to_sql(table_name, conn, if_exists="append", index=False, chunksize=10000)
     
     cursor = conn.cursor()
     cursor.execute(f"CREATE UNIQUE INDEX IF NOT EXISTS idx_factors_date_code ON {table_name}(trade_date, stock_code);")

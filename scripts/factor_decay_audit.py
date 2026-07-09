@@ -8,6 +8,8 @@ from datetime import datetime
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from config.paths import PATHS, startup_check
+
 def load_config(config_path="agent/config.yaml"):
     with open(config_path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
@@ -56,11 +58,10 @@ def compute_ic_for_period(db_path, csv_path, factors, recent_weeks=8):
 
 def run_audit(config_path="agent/config.yaml", audit_weeks=8):
     config = load_config(config_path)
-    paths = config["paths"]
     val_cfg = config["validation"]
     
     all_factors = config["factors"]["base_pool"]
-    custom_factors = config["factors"]["custom_new_factors"]
+    custom_factors = config["factors"].get("custom_new_factors", [])
     
     print("=" * 70)
     print(f"📊 因子 IC 衰减审计脚本")
@@ -69,7 +70,7 @@ def run_audit(config_path="agent/config.yaml", audit_weeks=8):
     print(f"⚠️ 警戒阈值: IC 衰减 > 30%")
     print("=" * 70)
     
-    df_ic = compute_ic_for_period(paths["stock_data_db"], paths["market_labels_csv"], all_factors)
+    df_ic = compute_ic_for_period(PATHS.database.stock_data, PATHS.data.market_regime_labels_v2, all_factors)
     
     base_start = val_cfg["baseline_start_date"]
     base_end = val_cfg["baseline_end_date"]

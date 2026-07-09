@@ -16,13 +16,15 @@ import shutil
 import pandas as pd
 import numpy as np
 import matplotlib
-# 设置无 GUI 的 backend
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
+from config.paths import PATHS, startup_check
 from src.data_loader import load_config, init_factor_db, load_neutral_factors, load_benchmark_data
 from src.regime_detector import classify_market, resample_to_weekly
+
+startup_check()
 
 # 配置中文字体，防止保存的图表出现豆腐块/乱码
 plt.rcParams["font.sans-serif"] = ["Heiti TC", "PingFang HK", "STHeiti", "Arial Unicode MS", "DejaVu Sans"]
@@ -166,7 +168,7 @@ def main():
     df_export = df_weekly[["trade_date", "regime", "return_20d", "vol_20d", "mdd_5d"]].copy()
     df_export = df_export.rename(columns={"return_20d": "ret_20d", "mdd_5d": "drawdown_5d"})
     
-    local_csv_path = "market_regime_labels_v2.csv"
+    local_csv_path = PATHS.data.market_regime_labels_v2
     df_export.to_csv(local_csv_path, index=False, encoding="utf-8-sig")
     print(f"📄 [CSV] 已导出预测标签表格至: {local_csv_path}")
     

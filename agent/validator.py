@@ -11,10 +11,16 @@ validator.py —— 因子 IC 衰减检验模块 (Phase 2 Agent Component)
 """
 
 import os
+import sys
 import yaml
 import sqlite3
 import pandas as pd
 import numpy as np
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config.paths import PATHS, startup_check
+
+startup_check()
 
 def load_config(config_path="agent/config.yaml"):
     with open(config_path, "r", encoding="utf-8") as f:
@@ -81,12 +87,12 @@ def validate_factors(config_path="agent/config.yaml"):
     核心校验入口。返回所有监测因子的衰减评价字典
     """
     config = load_config(config_path)
-    paths = config["paths"]
     val_cfg = config["validation"]
-    factors = config["factors"]["base_pool"]
+    # 动态合并 base_pool 和 custom_new_factors，确保在回测和自适应时所有相关因子的 IC 都被计算校验
+    factors = list(set(config["factors"]["base_pool"]) | set(config["factors"].get("custom_new_factors", [])))
     
     # 1. 计算全历史 IC 序列
-    df_ic, df_aligned = compute_historical_ic_series(paths["stock_data_db"], paths["market_labels_csv"], factors)
+    df_ic, df_aligned = compute_historical_ic_series(PATHS.database.stock_data, PATHS.data.market_regime_labels_v2, factors)
     
     # 2. 截取时间区间
     # 基准期 (Baseline): 历史前4年 (如 2020-2024)

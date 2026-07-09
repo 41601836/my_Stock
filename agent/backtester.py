@@ -15,7 +15,10 @@ import sqlite3
 import pandas as pd
 import numpy as np
 
-# 引入 matplotlib 并设置无 GUI 渲染后端，防服务器环境报错
+from config.paths import PATHS, startup_check
+
+startup_check()
+
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -113,7 +116,7 @@ def backprop_prediction_error(df_selected, factors, weights, error_threshold=-0.
     adjusted_weights = weights.copy()
     
     losers = df_selected[df_selected["future_return_5d"] <= error_threshold]
-    if len(losers) == 0:
+    if len(losers) == 0 or len(factors) == 0:
         return adjusted_weights
     
     penalty_per_loser = 0.05 / len(factors)
@@ -590,10 +593,217 @@ def run_routed_portfolio_backtest(df_aligned, weeks_to_backtest=208, config_path
     }
     
     df_res = pd.DataFrame(records)
-    df_res.to_csv("backtest_results_v2.csv", index=False, encoding="utf-8")
-    print(f"📝 [Routed Backtester] 动态路由周回测详情已导出至: backtest_results_v2.csv")
+    df_res.to_csv(PATHS.data.backtest_results, index=False, encoding="utf-8")
+    print(f"📝 [Routed Backtester] 动态路由周回测详情已导出至: {PATHS.data.backtest_results}")
     
     plot_path = "agent/backtest_performance_routed.png"
     plot_backtest_curves(backtest_dates, portfolio_equity, benchmark_equity, excess_equity, save_path=plot_path)
     
     return metrics, portfolio_equity, route_summary
+
+def load_jack_weights_by_regime(regime):
+    """
+    专门模拟博主“90后Jack”游资/高弹性交易风格的路由权重生成器：
+    - Range (震荡市) ➡️ 精准执行“抄底策略” (缩量急跌 + 外资砸盘冰点)
+    - Bull (牛市) ➡️ 强动量追涨 (近5日收益率 + 短期高波动率 + 量能放大)
+    - Dark / Bear ➡️ 完全空仓或防御风控
+    """
+    r = str(regime).upper()
+    if r == "RANGE":
+        # 抄底组合：超跌、北向砸盘冰点、缩量
+        factors = ["return_5d", "north_net_inflow_ratio", "turnover_rate_20d"]
+        weights = {
+            "return_5d": -0.5412,
+            "north_net_inflow_ratio": -0.1824,
+            "turnover_rate_20d": -0.2764
+        }
+        return factors, weights
+    elif r == "BULL":
+        # 追涨组合：强短期动量、高波动性弹性、放量
+        factors = ["return_5d", "volatility_10d", "vol_ratio"]
+        weights = {
+            "return_5d": 0.5,
+            "volatility_10d": 0.3,
+            "vol_ratio": 0.2
+        }
+        return factors, weights
+    else:
+        # Dark / Bear 状态：采取博主所使用的“空仓防守”模式，直接返回空组合以触发空仓
+        return [], {}
+
+def run_jack_portfolio_backtest(df_aligned, weeks_to_backtest=104, config_path="agent/config.yaml"):
+    """
+    专为博主“90后Jack”游资战法定制的单独路由回测器 (模拟开盘买入 + 极端高弹性偏好 + 空仓避险)
+    """
+    config = load_config(config_path)
+    bt_cfg = config["backtest"]
+    top_n = bt_cfg["top_n_stocks"]
+    t_cost = bt_cfg["transaction_cost"]
+    
+    unique_dates = sorted(df_aligned["trade_date"].unique())
+    if len(unique_dates) < weeks_to_backtest:
+        weeks_to_backtest = len(unique_dates)
+        
+    backtest_dates = unique_dates[-weeks_to_backtest:]
+    
+    print(f"ℹ️ [Jack Backtester] 启动游资/投机风格自适应路由回测 | 窗口: {weeks_to_backtest}周 ({backtest_dates[0]} ~ {backtest_dates[-1]}) | 持仓组合/周: Top {top_n}")
+    
+    portfolio_returns = []
+    benchmark_returns = []
+    excess_returns = []
+    
+    portfolio_equity = [1.0]
+    benchmark_equity = [1.0]
+    excess_equity = [1.0]
+    
+    range_weeks_count = 0
+    bull_weeks_count = 0
+    empty_weeks_count = 0
+    defense_weeks_count = 0
+    
+    records = []
+    
+    df_bt = df_aligned[df_aligned["trade_date"].isin(backtest_dates)].copy()
+    
+    # 预计算百分比秩
+    numeric_cols = [c for c in df_bt.columns if c not in ["stock_code", "trade_date", "future_return_5d", "regime"]]
+    for f in numeric_cols:
+        df_bt[f + "_rankpct"] = df_bt.groupby("trade_date")[f].rank(pct=True)
+        
+    grouped = df_bt.groupby("trade_date")
+    
+    for d in backtest_dates:
+        if d not in grouped.groups:
+            p_ret, b_ret, e_ret = 0.0, 0.0, 0.0
+            portfolio_returns.append(p_ret)
+            benchmark_returns.append(b_ret)
+            excess_returns.append(e_ret)
+            portfolio_equity.append(portfolio_equity[-1])
+            benchmark_equity.append(benchmark_equity[-1])
+            excess_equity.append(excess_equity[-1])
+            records.append({
+                "trade_date": d,
+                "portfolio_return": p_ret,
+                "benchmark_return": b_ret,
+                "excess_return": e_ret,
+                "regime": "Unknown",
+                "model_used": "Empty_Fallback"
+            })
+            continue
+            
+        df_sub = grouped.get_group(d).copy()
+        regime = df_sub["regime"].iloc[0]
+        b_ret = df_sub["future_return_5d"].mean()
+        
+        # 获取市场波动率
+        market_volatility = df_sub.get("volatility_20d", 0.0).mean() if "volatility_20d" in df_sub.columns else 0.05
+        
+        # 1. 路由加载专门针对游资/Jack的权重
+        factors, weights = load_jack_weights_by_regime(regime)
+        
+        # 2. 回测选股与收益统计
+        if factors is None or len(factors) == 0:
+            # Bear / Dark 周期，直接模拟博主采取的清仓或极轻仓防御策略 (被动跟踪)
+            p_ret = 0.0005  # 空仓逆回购收益
+            model_used = f"Jack_{regime}_Empty"
+            empty_weeks_count += 1
+        else:
+            if regime.upper() == "RANGE":
+                range_weeks_count += 1
+                model_used = "Jack_Range_Reversion"
+            elif regime.upper() == "BULL":
+                bull_weeks_count += 1
+                model_used = "Jack_Bull_Momentum"
+            else:
+                model_used = f"Jack_{regime}_Model"
+                
+            # 贝塔剥离评分
+            df_sub = calculate_beta_adjusted_score(df_sub, factors, weights, market_volatility)
+            
+            # 计算因子有效宽度
+            df_selected = df_sub.sort_values("adjusted_score", ascending=False).head(top_n)
+            p_ret_raw = df_selected["future_return_5d"].mean() - 2 * t_cost
+            p_ret = p_ret_raw
+            
+            # 极端大跌周内平仓风控
+            if b_ret < -0.05:
+                p_ret = 0.0
+                model_used = model_used + "_Risk_Stop"
+            
+        e_ret = p_ret - b_ret
+        
+        portfolio_returns.append(p_ret)
+        benchmark_returns.append(b_ret)
+        excess_returns.append(e_ret)
+        
+        portfolio_equity.append(portfolio_equity[-1] * (1.0 + p_ret))
+        benchmark_equity.append(benchmark_equity[-1] * (1.0 + b_ret))
+        excess_equity.append(excess_equity[-1] * (1.0 + e_ret))
+        
+        records.append({
+            "trade_date": d,
+            "portfolio_return": p_ret,
+            "benchmark_return": b_ret,
+            "excess_return": e_ret,
+            "regime": regime,
+            "model_used": model_used
+        })
+        
+    k_weeks = len(portfolio_returns)
+    p_series = pd.Series(portfolio_returns)
+    e_series = pd.Series(excess_returns)
+    
+    ann_return = (portfolio_equity[-1]) ** (52.0 / k_weeks) - 1.0 if portfolio_equity[-1] > 0 else -1.0
+    ann_vol = p_series.std() * np.sqrt(52)
+    
+    eq_series = pd.Series(portfolio_equity)
+    roll_max = eq_series.cummax()
+    max_dd = ((eq_series - roll_max) / roll_max).min()
+    calmar = ann_return / abs(max_dd) if abs(max_dd) > 1e-6 else 0.0
+    
+    excess_ann_return = (excess_equity[-1]) ** (52.0 / k_weeks) - 1.0 if excess_equity[-1] > 0 else -1.0
+    excess_ann_vol = e_series.std() * np.sqrt(52)
+    
+    ex_eq_series = pd.Series(excess_equity)
+    ex_roll_max = ex_eq_series.cummax()
+    ex_max_dd = ((ex_eq_series - ex_roll_max) / ex_roll_max).min()
+    ex_calmar = excess_ann_return / abs(ex_max_dd) if abs(ex_max_dd) > 1e-6 else 0.0
+    
+    win_rate = (p_series > 0).sum() / k_weeks if k_weeks > 0 else 0.0
+    excess_win_rate = (e_series > 0).sum() / k_weeks if k_weeks > 0 else 0.0
+    
+    metrics = {
+        "total_return": float(portfolio_equity[-1] - 1.0),
+        "annualized_return": float(ann_return),
+        "annualized_volatility": float(ann_vol),
+        "max_drawdown": float(max_dd),
+        "calmar_ratio": float(calmar),
+        
+        "excess_total_return": float(excess_equity[-1] - 1.0),
+        "excess_annual_return": float(excess_ann_return),
+        "excess_annual_volatility": float(excess_ann_vol),
+        "excess_max_drawdown": float(ex_max_dd),
+        "excess_calmar_ratio": float(ex_calmar),
+        
+        "win_rate": float(win_rate),
+        "excess_win_rate": float(excess_win_rate),
+        "weeks": k_weeks
+    }
+    
+    route_summary = {
+        "range_weeks": range_weeks_count,
+        "bull_weeks": bull_weeks_count,
+        "empty_weeks": empty_weeks_count,
+        "defense_weeks": defense_weeks_count,
+        "total_weeks": k_weeks
+    }
+    
+    df_res = pd.DataFrame(records)
+    results_path = "backtest_results_jack.csv"
+    df_res.to_csv(results_path, index=False, encoding="utf-8")
+    print(f"📝 [Jack Backtester] 游资路由回测详情已导出至: {results_path}")
+    
+    plot_path = "agent/backtest_performance_jack.png"
+    plot_backtest_curves(backtest_dates, portfolio_equity, benchmark_equity, excess_equity, save_path=plot_path)
+    
+    return metrics, route_summary
