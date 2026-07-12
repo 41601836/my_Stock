@@ -225,8 +225,17 @@ function Scanner() {
                         }`}>{s.rank}</span>
                       </td>
                       <td className="p-3">
-                        <div className="font-bold text-gray-200 text-xs">{s.ts_code}</div>
-                        <div className="text-gray-100 font-sans font-semibold">{s.name}</div>
+                        <a
+                          href={`http://stockpage.10jqka.com.cn/${s.ts_code.substring(0, 6)}/`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="hover:underline cursor-pointer flex flex-col"
+                          title="在同花顺查看该股票详情"
+                        >
+                          <div className="font-bold text-gray-200 text-xs hover:text-indigo-300">{s.ts_code}</div>
+                          <div className="text-gray-100 font-sans font-semibold hover:text-indigo-400">{s.name}</div>
+                        </a>
                       </td>
                       <td className="p-3 text-gray-400 font-sans text-xs">{s.industry}</td>
                       <td className="p-3 text-right"><PctChg value={s.pct_chg} /></td>

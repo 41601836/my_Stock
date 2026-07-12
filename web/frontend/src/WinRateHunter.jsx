@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Rocket, History, RefreshCw, Crosshair, Terminal } from 'lucide-react'
 
 export default function WinRateHunter({ upsertToast, removeToast, pollTask }) {
@@ -10,6 +10,36 @@ export default function WinRateHunter({ upsertToast, removeToast, pollTask }) {
   })
   
   const [isStarted, setIsStarted] = useState(false)
+  const [hunterResult, setHunterResult] = useState(null)
+  const [portfolio, setPortfolio] = useState(null)
+  const [loadingResult, setLoadingResult] = useState(false)
+
+  const fetchResult = async () => {
+    setLoadingResult(true)
+    try {
+      const [res1, res2] = await Promise.all([
+        fetch('http://localhost:8000/api/hunter/result'),
+        fetch('http://localhost:8000/api/portfolio')
+      ])
+      
+      if (res1.ok) {
+        const data1 = await res1.json()
+        if (!data1.error) setHunterResult(data1)
+      }
+      if (res2.ok) {
+        const data2 = await res2.json()
+        setPortfolio(data2)
+      }
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setLoadingResult(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchResult()
+  }, [])
 
   const handleRun = async () => {
     const toastId = `hunter-${Date.now()}`
@@ -45,7 +75,127 @@ export default function WinRateHunter({ upsertToast, removeToast, pollTask }) {
             基于达尔文遗传算法的深度参数寻优引擎。在多维参数空间中搜寻绝对胜率最高的策略基因。
           </p>
         </div>
+        <button 
+          onClick={fetchResult}
+          className="flex items-center gap-2 px-4 py-2 bg-[#111827] border border-[#374151] hover:border-gray-500 rounded-lg text-sm text-gray-300 transition-all"
+        >
+          <RefreshCw className={`h-4 w-4 ${loadingResult ? 'animate-spin' : ''}`} />
+          刷新最新结论
+        </button>
       </div>
+
+      {/* 结论展示面板 */}
+      {hunterResult && (
+        <div className="bg-gradient-to-br from-[#0f172a] to-[#1e1b4b] rounded-2xl border border-indigo-500/30 p-6 shadow-2xl relative overflow-hidden">
+          <div className="absolute top-0 right-0 -mt-4 -mr-4 text-indigo-500/10">
+            <Crosshair className="w-48 h-48" />
+          </div>
+          <div className="relative z-10">
+            <div className="flex items-center gap-3 mb-6">
+              <span className="text-2xl">🏆</span>
+              <h3 className="text-lg font-bold text-indigo-100 tracking-wide">
+                全局最优进化基因 <span className="text-xs font-normal text-indigo-300/70 ml-2 font-mono">结论产出于 {hunterResult.timestamp}</span>
+              </h3>
+            </div>
+            
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-black/20 rounded-xl border border-white/5 p-4 flex flex-col gap-1">
+                <span className="text-xs text-indigo-300/70 uppercase tracking-wider font-semibold">历史绝对胜率</span>
+                <span className="text-2xl font-bold text-emerald-400 font-mono">{hunterResult.best_win_rate}%</span>
+              </div>
+              <div className="bg-black/20 rounded-xl border border-white/5 p-4 flex flex-col gap-1">
+                <span className="text-xs text-indigo-300/70 uppercase tracking-wider font-semibold">超额卡玛比率</span>
+                <span className="text-2xl font-bold text-amber-400 font-mono">{hunterResult.best_calmar}</span>
+              </div>
+              <div className="bg-black/20 rounded-xl border border-white/5 p-4 flex flex-col gap-1">
+                <span className="text-xs text-indigo-300/70 uppercase tracking-wider font-semibold">最优持仓数量</span>
+                <span className="text-2xl font-bold text-white font-mono">{hunterResult.best_params.top_n_stocks} 只</span>
+              </div>
+              <div className="bg-black/20 rounded-xl border border-white/5 p-4 flex flex-col gap-1">
+                <span className="text-xs text-indigo-300/70 uppercase tracking-wider font-semibold">最优因子乘数</span>
+                <span className="text-2xl font-bold text-white font-mono">{hunterResult.best_params.multiplier}x</span>
+              </div>
+            </div>
+            
+            <div className="mt-5 text-xs text-indigo-200/50 flex gap-4">
+              <span>寻优区间: {hunterResult.start} - {hunterResult.end}</span>
+              <span>种群/代数: {hunterResult.population} / {hunterResult.generations}</span>
+              <span className="text-emerald-400/70 ml-auto">已自动应用至内核配置 ✓</span>
+            </div>
+            
+            {/* 动态展示被选出的股票池 */}
+            {portfolio && portfolio.length > 0 && (
+              <div className="mt-8 border-t border-white/10 pt-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>
+                  <h4 className="text-sm font-bold text-white tracking-wide">实盘应用：基于最优基因的实时选股 ({portfolio.length}只)</h4>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm text-gray-300">
+                    <thead className="text-xs text-indigo-300/70 bg-white/5 font-mono">
+                      <tr>
+                        <th className="px-4 py-3 rounded-tl-lg">排名</th>
+                        <th className="px-4 py-3">代码</th>
+                        <th className="px-4 py-3">名称</th>
+                        <th className="px-4 py-3">版块/行业</th>
+                        <th className="px-4 py-3 text-right">综合得分</th>
+                        <th className="px-4 py-3 text-right">5日</th>
+                        <th className="px-4 py-3 text-right">10日</th>
+                        <th className="px-4 py-3 text-right">20日</th>
+                        <th className="px-4 py-3 text-right rounded-tr-lg">今日涨幅</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {portfolio.map((s, idx) => (
+                        <tr key={idx} className="hover:bg-white/5 transition-colors">
+                          <td className="px-4 py-3 font-mono text-emerald-400 font-bold">#{s.rank}</td>
+                          <td className="px-4 py-3 font-mono">
+                            <a 
+                              href={`http://stockpage.10jqka.com.cn/${s.stock_code.substring(0, 6)}/`} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="text-indigo-400 hover:text-indigo-300 hover:underline cursor-pointer"
+                              title="在同花顺查看该股票详情"
+                            >
+                              {s.stock_code}
+                            </a>
+                          </td>
+                          <td className="px-4 py-3 font-bold">
+                            <a 
+                              href={`http://stockpage.10jqka.com.cn/${s.stock_code.substring(0, 6)}/`} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="text-white hover:text-indigo-200 hover:underline cursor-pointer"
+                              title="在同花顺查看该股票详情"
+                            >
+                              {s.name}
+                            </a>
+                          </td>
+                          <td className="px-4 py-3 text-xs">{s.industry}</td>
+                          <td className="px-4 py-3 text-right font-mono">{s.score.toFixed(4)}</td>
+                          <td className={`px-4 py-3 text-right font-mono ${s.return_5d >= 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                            {s.return_5d > 0 ? '+' : ''}{(s.return_5d * 100).toFixed(2)}%
+                          </td>
+                          <td className={`px-4 py-3 text-right font-mono ${s.return_10d >= 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                            {s.return_10d > 0 ? '+' : ''}{(s.return_10d * 100).toFixed(2)}%
+                          </td>
+                          <td className={`px-4 py-3 text-right font-mono ${s.return_20d >= 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                            {s.return_20d > 0 ? '+' : ''}{(s.return_20d * 100).toFixed(2)}%
+                          </td>
+                          <td className={`px-4 py-3 text-right font-mono font-bold ${s.daily_change >= 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                            {s.daily_change > 0 ? '+' : ''}{(s.daily_change * 100).toFixed(2)}%
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+          </div>
+        </div>
+      )}
 
       {/* 控制面板 */}
       <div className="bg-[#111827] rounded-2xl border border-[#1F2937] p-6 shadow-xl">

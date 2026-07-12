@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts'
-import { RefreshCw, TrendingUp, Flame, ShieldAlert, ArrowUpRight, ArrowDownRight, Compass, Zap, Activity, Info } from 'lucide-react'
+import { RefreshCw, TrendingUp, Flame, ShieldAlert, ArrowUpRight, ArrowDownRight, Compass, Zap, Activity, Info, X } from 'lucide-react'
 
 const regimeConfig = {
   BULL: { label: 'BULL  牛市全速', subLabel: '火力全开，满仓跟进', icon: Flame, color: '#10b981', bg: 'rgba(16,185,129,0.08)', border: 'rgba(16,185,129,0.25)', glow: '0 0 24px rgba(16,185,129,0.15)' },
@@ -31,15 +31,62 @@ const CustomTooltip = ({ active, payload, label }) => {
 
 export default function Overview() {
   const [data, setData] = useState(null)
+  const [regimeData, setRegimeData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  
+  const [selectedTheme, setSelectedTheme] = useState(null)
+  const [themeStocks, setThemeStocks] = useState(null)
+  const [loadingTheme, setLoadingTheme] = useState(false)
+
+  const [showStyleStocks, setShowStyleStocks] = useState(false)
+  const [styleStocksData, setStyleStocksData] = useState(null)
+  const [loadingStyleStocks, setLoadingStyleStocks] = useState(false)
+
+  const fetchStyleStocks = async (date, style) => {
+    setShowStyleStocks(true)
+    setLoadingStyleStocks(true)
+    setStyleStocksData(null)
+    try {
+      const res = await fetch(`http://localhost:8000/api/market/style-stocks?date=${encodeURIComponent(date)}&style=${encodeURIComponent(style)}`)
+      if (!res.ok) throw new Error('获取风格个股失败')
+      const data = await res.json()
+      setStyleStocksData(data)
+    } catch (err) {
+      console.error(err)
+      setStyleStocksData({ error: err.message })
+    } finally {
+      setLoadingStyleStocks(false)
+    }
+  }
+
+  const fetchThemeStocks = async (sector) => {
+    setSelectedTheme(sector)
+    setLoadingTheme(true)
+    setThemeStocks(null)
+    try {
+      const res = await fetch(`http://localhost:8000/api/market/theme-stocks?sector=${encodeURIComponent(sector)}`)
+      if (!res.ok) throw new Error('获取题材股票失败')
+      const data = await res.json()
+      setThemeStocks(data)
+    } catch (err) {
+      console.error(err)
+      setThemeStocks({ error: err.message })
+    } finally {
+      setLoadingTheme(false)
+    }
+  }
 
   const fetchOverview = async () => {
     setLoading(true)
     try {
-      const res = await fetch('http://localhost:8000/api/market/overview')
-      if (!res.ok) throw new Error('Failed to fetch market overview')
-      setData(await res.json())
+      const [res1, res2] = await Promise.all([
+        fetch('http://localhost:8000/api/market/overview'),
+        fetch('http://localhost:8000/api/market/regime-dashboard')
+      ])
+      if (!res1.ok || !res2.ok) throw new Error('Failed to fetch market data')
+      setData(await res1.json())
+      setRegimeData(await res2.json())
       setError(null)
     } catch (err) {
       setError(err.message)
@@ -181,10 +228,12 @@ export default function Overview() {
           </div>
         </div>
 
-        {/* 市场路由 */}
+        {/* 市场路由 (精简版，只保留状态) */}
         <div style={card(null, regCfg.color)}>
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: `linear-gradient(90deg, transparent, ${regCfg.color}60, transparent)` }} />
-          <span style={{ fontSize: 10, color: '#8b949e', fontFamily: 'monospace', letterSpacing: '0.05em' }}>策略决策路由  MARKET REGIME</span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 10, color: '#8b949e', fontFamily: 'monospace', letterSpacing: '0.05em' }}>策略决策路由  MARKET REGIME</span>
+          </div>
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, padding: '18px 12px', borderRadius: 12, background: regCfg.bg, border: `1px solid ${regCfg.border}`, boxShadow: regCfg.glow }}>
             <RegIcon size={32} color={regCfg.color} style={{ filter: `drop-shadow(0 0 8px ${regCfg.color}60)` }} />
             <div style={{ fontSize: 13, fontWeight: 800, color: regCfg.color, fontFamily: 'monospace', letterSpacing: '0.06em', textAlign: 'center' }}>{regCfg.label}</div>
@@ -192,7 +241,7 @@ export default function Overview() {
           </div>
           <div style={{ background: 'rgba(139,148,158,0.05)', border: '1px solid #21262d', borderRadius: 8, padding: '7px 10px', fontSize: 10, color: '#6e7681', fontFamily: 'monospace', lineHeight: 1.6 }}>
             <Info size={10} style={{ display: 'inline', marginRight: 4, verticalAlign: 'middle', color: '#8b949e' }} />
-            BULL 满仓；RANGE 快进快出；BEAR 强制减仓 50% 或清仓。
+            {regimeData?.position_advice?.advice || '根据行情动态调整仓位'}
           </div>
         </div>
 
@@ -222,6 +271,55 @@ export default function Overview() {
         </div>
       </div>
 
+      {/* 新增：路由层判定细节 */}
+      {regimeData && !regimeData.error && (
+        <div style={{ background: 'linear-gradient(135deg, #0d1117 0%, #161b22 100%)', border: '1px solid #21262d', borderRadius: 16, padding: '22px 24px', position: 'relative', overflow: 'hidden' }}>
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: `linear-gradient(90deg, transparent, ${regCfg.color}60, transparent)` }} />
+          <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Activity size={15} color={regCfg.color} />
+                <span style={{ fontSize: 13, fontWeight: 700, color: '#e6edf3' }}>底层路由触发条件诊断</span>
+                <span style={{ fontSize: 10, color: '#4b5563', fontFamily: 'monospace' }}>REGIME TRIGGERS</span>
+              </div>
+              <p style={{ fontSize: 11, color: '#6e7681', marginTop: 4 }}>为什么是 {regime}？实时监测大盘波动率、回撤及上涨动能</p>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {regimeData.triggers?.map((t, i) => (
+                <div key={i} style={{ padding: '4px 10px', borderRadius: 6, background: `rgba(244,63,94,0.1)`, border: `1px solid rgba(244,63,94,0.3)`, color: '#f43f5e', fontSize: 10, fontFamily: 'monospace' }}>
+                  🚨 触发: {t.name} ({t.value})
+                </div>
+              ))}
+              {(!regimeData.triggers || regimeData.triggers.length === 0) && (
+                <div style={{ padding: '4px 10px', borderRadius: 6, background: 'rgba(56,189,248,0.1)', border: '1px solid rgba(56,189,248,0.3)', color: '#38bdf8', fontSize: 10, fontFamily: 'monospace' }}>
+                  ✓ 当前运行在安全区间
+                </div>
+              )}
+            </div>
+          </div>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12 }}>
+            {[
+              { label: '近20日收益率', val: regimeData.indicators.return_20d + '%', threshold: `Bull >5% / Bear <-3%`, status: regimeData.indicators.return_20d > 5 ? 'good' : regimeData.indicators.return_20d < -3 ? 'bad' : 'normal' },
+              { label: '近5日最大回撤', val: regimeData.indicators.mdd_5d + '%', threshold: `Dark < -5%`, status: regimeData.indicators.mdd_5d < -5 ? 'bad' : 'normal' },
+              { label: '20日滚动波动率', val: regimeData.indicators.vol_20d + '%', threshold: `> ${regimeData.thresholds.vol_75pct}% (75分位过热)`, status: regimeData.indicators.vol_20d > regimeData.thresholds.vol_75pct ? 'bad' : 'normal' },
+              { label: '上涨家数占比', val: regimeData.indicators.up_ratio + '%', threshold: `Dark < 30%`, status: regimeData.indicators.up_ratio < 30 ? 'bad' : 'normal' },
+              { label: '周度绩效诊断', val: regimeData.indicators.return_5d + '%', threshold: `Dark < -4.5%`, status: regimeData.indicators.return_5d < -4.5 ? 'bad' : 'normal' },
+            ].map((idx, i) => {
+              const colorMap = { good: '#10b981', bad: '#f43f5e', normal: '#a78bfa' }
+              const c = colorMap[idx.status]
+              return (
+                <div key={i} style={{ padding: '12px 14px', borderRadius: 10, background: '#0d1117', border: '1px solid #21262d', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <span style={{ fontSize: 10, color: '#8b949e', fontFamily: 'monospace' }}>{idx.label}</span>
+                  <span style={{ fontSize: 16, fontWeight: 700, color: c, fontFamily: 'monospace' }}>{idx.val}</span>
+                  <span style={{ fontSize: 9, color: '#4b5563', fontFamily: 'monospace', marginTop: 2 }}>阈值: {idx.threshold}</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       {/* 第二行：风格轮动 */}
       <div style={{ background: 'linear-gradient(135deg, #0d1117 0%, #161b22 100%)', border: '1px solid #21262d', borderRadius: 16, padding: '22px 24px', position: 'relative', overflow: 'hidden' }}>
         <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: 'linear-gradient(90deg, transparent, #a78bfa60, transparent)' }} />
@@ -242,9 +340,9 @@ export default function Overview() {
                 <YAxis stroke="#4b5563" fontSize={10} tickLine={false} axisLine={false} unit="%" fontFamily="monospace" />
                 <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
                 <Legend wrapperStyle={{ fontSize: 10, paddingTop: 14, fontFamily: 'monospace' }} formatter={(v) => <span style={{ color: '#8b949e' }}>{v}</span>} />
-                <Bar name="💜 题材炒作 (游资)" dataKey="高换手风格 (Turnover)" fill="#c084fc" radius={[4,4,0,0]} maxBarSize={36} />
-                <Bar name="💚 强庄控盘 (机构)" dataKey="筹码锁仓风格 (Chips)" fill="#10b981" radius={[4,4,0,0]} maxBarSize={36} />
-                <Bar name="💛 资金扫货 (主力)" dataKey="大单大市风格 (Inflow)" fill="#f59e0b" radius={[4,4,0,0]} maxBarSize={36} />
+                <Bar name="💜 题材炒作 (游资)" dataKey="高换手风格 (Turnover)" fill="#c084fc" radius={[4,4,0,0]} maxBarSize={36} cursor="pointer" onClick={(data) => {if(data && data.date) fetchStyleStocks(data.date, '高换手风格 (Turnover)')}} />
+                <Bar name="💚 强庄控盘 (机构)" dataKey="筹码锁仓风格 (Chips)" fill="#10b981" radius={[4,4,0,0]} maxBarSize={36} cursor="pointer" onClick={(data) => {if(data && data.date) fetchStyleStocks(data.date, '筹码锁仓风格 (Chips)')}} />
+                <Bar name="💛 资金扫货 (主力)" dataKey="大单大市风格 (Inflow)" fill="#f59e0b" radius={[4,4,0,0]} maxBarSize={36} cursor="pointer" onClick={(data) => {if(data && data.date) fetchStyleStocks(data.date, '大单大市风格 (Inflow)')}} />
               </BarChart>
             </ResponsiveContainer>
           ) : (
@@ -283,12 +381,35 @@ export default function Overview() {
           {data?.hot_money_themes?.length > 0 ? data.hot_money_themes.map((item, i) => {
             const rankColors = ['#f59e0b', '#94a3b8', '#b45309', '#6b7280', '#6b7280']
             const rc = rankColors[i] || '#6b7280'
+            // 连续天数信号颜色映射
+            const sigColorMap = {
+              gray: { color: '#6b7280', bg: 'rgba(107,114,128,0.12)', border: 'rgba(107,114,128,0.3)' },
+              yellow: { color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.3)' },
+              green: { color: '#10b981', bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.3)' },
+              orange: { color: '#f97316', bg: 'rgba(249,115,22,0.12)', border: 'rgba(249,115,22,0.3)' },
+              red: { color: '#f43f5e', bg: 'rgba(244,63,94,0.12)', border: 'rgba(244,63,94,0.3)' },
+            }
+            const sc = sigColorMap[item.signal_color] || sigColorMap.gray
             return (
-              <div key={i} style={{ background: 'rgba(167,139,250,0.04)', border: `1px solid rgba(167,139,250,${0.15 - i * 0.02})`, borderRadius: 12, padding: '14px', display: 'flex', flexDirection: 'column', gap: 10, position: 'relative', overflow: 'hidden' }}>
+              <div 
+                key={i} 
+                onClick={() => fetchThemeStocks(item.sector)}
+                style={{ background: 'rgba(167,139,250,0.04)', border: `1px solid rgba(167,139,250,${0.15 - i * 0.02})`, borderRadius: 12, padding: '14px', display: 'flex', flexDirection: 'column', gap: 8, position: 'relative', overflow: 'hidden', cursor: 'pointer', transition: 'all 0.2s ease', ...(selectedTheme === item.sector ? { background: 'rgba(167,139,250,0.1)', borderColor: 'rgba(167,139,250,0.5)', boxShadow: '0 0 15px rgba(167,139,250,0.2)' } : {}) }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(167,139,250,0.08)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = selectedTheme === item.sector ? 'rgba(167,139,250,0.1)' : 'rgba(167,139,250,0.04)' }}
+              >
+                {/* 排名勋章 */}
                 <div style={{ position: 'absolute', top: 8, right: 8, width: 20, height: 20, borderRadius: '50%', background: `${rc}20`, border: `1px solid ${rc}50`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <span style={{ fontSize: 9, fontWeight: 800, color: rc, fontFamily: 'monospace' }}>#{i+1}</span>
                 </div>
+                {/* 题材名称 */}
                 <div style={{ fontSize: 12, fontWeight: 700, color: '#e6edf3', paddingRight: 28, lineHeight: 1.3 }} title={item.sector}>{item.sector}</div>
+                {/* 连续天数 + 操盘信号 */}
+                <div style={{ padding: '5px 8px', borderRadius: 6, background: sc.bg, border: `1px solid ${sc.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: 9, color: sc.color, fontFamily: 'monospace', fontWeight: 700 }}>🔥 连续 {item.streak_days ?? 1} 天</span>
+                  <span style={{ fontSize: 8, color: sc.color, fontFamily: 'monospace', opacity: 0.85 }}>{item.signal}</span>
+                </div>
+                {/* 指标数值 */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, fontFamily: 'monospace' }}>
                     <span style={{ color: '#6e7681' }}>换手率</span>
@@ -299,6 +420,7 @@ export default function Overview() {
                     <span style={{ color: '#f87171', fontWeight: 700 }}>+{item.net_inflow} 亿</span>
                   </div>
                 </div>
+                {/* 热度进度条 */}
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: '#6e7681', fontFamily: 'monospace', marginBottom: 4 }}>
                     <span>游资热度</span>
@@ -366,6 +488,157 @@ export default function Overview() {
           </div>
         </div>
       </div>
+
+      {/* 题材龙头股 Modal */}
+      {selectedTheme && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
+          <div style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: 16, width: 600, maxWidth: '90%', padding: '24px', boxShadow: '0 20px 40px rgba(0,0,0,0.5)', position: 'relative' }}>
+            <button 
+              onClick={() => setSelectedTheme(null)} 
+              style={{ position: 'absolute', top: 16, right: 16, background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer' }}
+            >
+              <X size={20} />
+            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+              <Zap size={20} color="#c084fc" />
+              <h3 style={{ margin: 0, fontSize: 18, color: '#e6edf3', fontFamily: 'monospace' }}>{selectedTheme} <span style={{ fontSize: 12, color: '#8b949e', fontWeight: 400 }}>活跃个股明细</span></h3>
+            </div>
+            
+            {loadingTheme ? (
+              <div style={{ textAlign: 'center', padding: '40px 0', color: '#8b949e', fontSize: 13, fontFamily: 'monospace' }}>加载中...</div>
+            ) : themeStocks?.error ? (
+              <div style={{ textAlign: 'center', padding: '40px 0', color: '#f43f5e', fontSize: 13, fontFamily: 'monospace' }}>{themeStocks.error}</div>
+            ) : themeStocks?.stocks?.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: '60vh', overflowY: 'auto', paddingRight: 8 }}>
+                {themeStocks.stocks.map((s, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: 'rgba(255,255,255,0.03)', border: '1px solid #21262d', borderRadius: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <span style={{ fontSize: 12, color: '#8b949e', fontFamily: 'monospace', width: 24 }}>{i+1}.</span>
+                      <div>
+                        <a 
+                          href={`http://stockpage.10jqka.com.cn/${s.ts_code.substring(0, 6)}/`} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          style={{ textDecoration: 'none', cursor: 'pointer' }}
+                          title="在同花顺查看该股票详情"
+                        >
+                          <div style={{ fontSize: 14, fontWeight: 700, color: '#e6edf3' }} className="hover:text-indigo-400">{s.name}</div>
+                          <div style={{ fontSize: 10, color: '#6e7681', fontFamily: 'monospace', marginTop: 2 }} className="hover:text-indigo-300">{s.ts_code}</div>
+                        </a>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 24, textAlign: 'right' }}>
+                      <div>
+                        <div style={{ fontSize: 10, color: '#6e7681', fontFamily: 'monospace', marginBottom: 2 }}>涨跌幅</div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: s.pct_chg > 0 ? '#f43f5e' : s.pct_chg < 0 ? '#10b981' : '#e6edf3', fontFamily: 'monospace' }}>
+                          {s.pct_chg > 0 ? '+' : ''}{s.pct_chg}%
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 10, color: '#6e7681', fontFamily: 'monospace', marginBottom: 2 }}>换手率</div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: '#e6edf3', fontFamily: 'monospace' }}>{s.turnover_rate}%</div>
+                      </div>
+                      <div style={{ width: 70 }}>
+                        <div style={{ fontSize: 10, color: '#6e7681', fontFamily: 'monospace', marginBottom: 2 }}>净买入</div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: s.net_inflow > 0 ? '#f43f5e' : '#10b981', fontFamily: 'monospace' }}>
+                          {s.net_inflow > 0 ? '+' : ''}{s.net_inflow} 亿
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ textAlign: 'center', padding: '40px 0', color: '#8b949e', fontSize: 13, fontFamily: 'monospace' }}>无数据</div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 风格轮动穿透弹窗 */}
+      {showStyleStocks && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }} onClick={() => setShowStyleStocks(false)} />
+          <div style={{ position: 'relative', width: '100%', maxWidth: 700, background: '#161b22', border: '1px solid #30363d', borderRadius: 16, padding: '24px', boxShadow: '0 20px 40px rgba(0,0,0,0.8)' }}>
+            <button 
+              onClick={() => setShowStyleStocks(false)}
+              style={{ position: 'absolute', top: 20, right: 20, background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', padding: 4 }}
+            >
+              <X size={20} />
+            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+              <TrendingUp size={20} color="#a78bfa" />
+              <h3 style={{ margin: 0, fontSize: 18, color: '#e6edf3', fontFamily: 'monospace' }}>
+                {styleStocksData?.date} <span style={{ fontSize: 14, color: '#a78bfa', fontWeight: 700, marginLeft: 8 }}>{styleStocksData?.style}</span> 
+                <span style={{ fontSize: 12, color: '#8b949e', fontWeight: 400, marginLeft: 8 }}>支撑个股明细 (Top 20)</span>
+              </h3>
+            </div>
+            
+            {loadingStyleStocks ? (
+              <div style={{ textAlign: 'center', padding: '40px 0', color: '#8b949e', fontSize: 13, fontFamily: 'monospace' }}>加载中...</div>
+            ) : styleStocksData?.error ? (
+              <div style={{ textAlign: 'center', padding: '40px 0', color: '#f43f5e', fontSize: 13, fontFamily: 'monospace' }}>{styleStocksData.error}</div>
+            ) : styleStocksData?.stocks?.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: '60vh', overflowY: 'auto', paddingRight: 8 }}>
+                {styleStocksData.stocks.map((s, i) => {
+                  let metricValue = ''
+                  let metricLabel = ''
+                  let metricColor = '#e6edf3'
+                  if (styleStocksData.style.includes('Turnover')) {
+                    metricLabel = '换手率'
+                    metricValue = `${s.turnover_rate}%`
+                    metricColor = '#c084fc'
+                  } else if (styleStocksData.style.includes('Chips')) {
+                    metricLabel = '筹码锁仓'
+                    metricValue = `${s.chips_peak_pct}%`
+                    metricColor = '#10b981'
+                  } else if (styleStocksData.style.includes('Inflow')) {
+                    metricLabel = '净买入'
+                    metricValue = `${s.net_mf_amount > 0 ? '+' : ''}${s.net_mf_amount} 亿`
+                    metricColor = s.net_mf_amount > 0 ? '#f43f5e' : '#10b981'
+                  }
+                  
+                  return (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: 'rgba(255,255,255,0.03)', border: '1px solid #21262d', borderRadius: 10 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <span style={{ fontSize: 12, color: '#8b949e', fontFamily: 'monospace', width: 24 }}>{i+1}.</span>
+                        <div>
+                          <a 
+                            href={`http://stockpage.10jqka.com.cn/${String(s.ts_code || '').substring(0, 6)}/`} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            style={{ textDecoration: 'none', cursor: 'pointer' }}
+                            title="在同花顺查看该股票详情"
+                          >
+                            <div style={{ fontSize: 14, fontWeight: 700, color: '#e6edf3' }} className="hover:text-indigo-400">{s.name}</div>
+                            <div style={{ fontSize: 10, color: '#6e7681', fontFamily: 'monospace', marginTop: 2 }} className="hover:text-indigo-300">{s.ts_code}</div>
+                          </a>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 24, textAlign: 'right' }}>
+                        <div>
+                          <div style={{ fontSize: 10, color: '#6e7681', fontFamily: 'monospace', marginBottom: 2 }}>涨跌幅</div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: s.pct_chg > 0 ? '#f43f5e' : s.pct_chg < 0 ? '#10b981' : '#e6edf3', fontFamily: 'monospace' }}>
+                            {s.pct_chg > 0 ? '+' : ''}{s.pct_chg}%
+                          </div>
+                        </div>
+                        <div style={{ width: 70 }}>
+                          <div style={{ fontSize: 10, color: '#6e7681', fontFamily: 'monospace', marginBottom: 2 }}>{metricLabel}</div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: metricColor, fontFamily: 'monospace' }}>
+                            {metricValue}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            ) : (
+              <div style={{ textAlign: 'center', padding: '40px 0', color: '#8b949e', fontSize: 13, fontFamily: 'monospace' }}>无数据</div>
+            )}
+          </div>
+        </div>
+      )}
 
     </div>
   )

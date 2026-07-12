@@ -160,6 +160,28 @@ def run_evolution(args):
         
     print(f"\n💾 [系统通知] 已自动将最优参数应用至系统配置文件: {cfg_path}")
 
+    # 将结果保存为 JSON 供前端直观展示
+    import json
+    result_data = {
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "best_params": best_overall[0],
+        "best_win_rate": round(best_overall[2] * 100, 2),
+        "best_calmar": round(best_overall[3], 4),
+        "start": args.start,
+        "end": args.end,
+        "generations": args.generations,
+        "population": args.population
+    }
+    
+    # 将文件存放在项目根目录 logs 文件夹下
+    log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+    os.makedirs(log_dir, exist_ok=True)
+    out_file = os.path.join(log_dir, "hunter_results.json")
+    with open(out_file, "w", encoding="utf-8") as f:
+        json.dump(result_data, f, indent=4, ensure_ascii=False)
+    print(f"💾 [系统通知] 寻优结论已写入: {out_file}")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Win Rate Hunter GA Optimizer")
     parser.add_argument("--start", type=str, required=True, help="起始日期 (YYYYMMDD)")

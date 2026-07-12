@@ -38,6 +38,11 @@ from services import (
     get_tracker_attribution_data,
     determine_adaptive_hold_period,
     get_market_overview_data,
+    get_regime_dashboard,
+    get_theme_stocks,
+    search_stock,
+    diagnose_stock,
+    get_style_stocks,
     PROJECT_ROOT
 )
 
@@ -214,6 +219,18 @@ async def api_hunter_run(request: Request):
     t.start()
     return {"task_id": task_id, "status": "PENDING", "message": "胜率猎手遗传进化已点火，将在后台持续寻优..."}
 
+@app.get("/api/hunter/result")
+def api_hunter_result():
+    """
+    获取最近一次胜率猎手的寻优结论
+    """
+    import os, json
+    res_file = os.path.join(PROJECT_ROOT, "logs", "hunter_results.json")
+    if os.path.exists(res_file):
+        with open(res_file, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {"error": "尚未生成寻优结论，请先运行猎手"}
+
 @app.get("/api/strategies")
 def api_get_strategies():
     """
@@ -313,6 +330,49 @@ def api_market_overview():
     获取宏观量化市场全览数据 (赚钱效应、筹码温度、资金流向排行及因子风格轮动)
     """
     return get_market_overview_data()
+
+@app.get("/api/market/regime-dashboard")
+def api_market_regime_dashboard():
+    """
+    获取实时市场状态路由层的判定细节及历史
+    """
+    return get_regime_dashboard()
+
+@app.get("/api/market/theme-stocks")
+def api_market_theme_stocks(sector: str = ""):
+    """
+    获取游资热点题材下的具体股票列表
+    """
+    if not sector:
+        return {"error": "Sector parameter is required"}
+    return get_theme_stocks(sector)
+
+@app.get("/api/market/search-stock")
+def api_market_search_stock(query: str = ""):
+    """
+    模糊查询股票代码或名称
+    """
+    if not query:
+        return {"stocks": []}
+    return search_stock(query)
+
+@app.get("/api/market/diagnose")
+def api_market_diagnose(ts_code: str = "", strategy: str = "current"):
+    """
+    对指定股票进行策略诊断
+    """
+    if not ts_code:
+        return {"error": "Missing ts_code"}
+    return diagnose_stock(ts_code, strategy)
+
+@app.get("/api/market/style-stocks")
+def api_market_style_stocks(date: str = "", style: str = ""):
+    """
+    获取某日特定风格的前20名支撑个股
+    """
+    if not date or not style:
+        return {"error": "Missing parameters"}
+    return get_style_stocks(date, style)
 
 if __name__ == "__main__":
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)

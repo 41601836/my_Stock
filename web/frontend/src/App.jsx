@@ -10,6 +10,7 @@ import Scanner from './Scanner'
 import WinRateHunter from './WinRateHunter'
 import StrategySelector from './StrategySelector'
 import Diagnosis from './Diagnosis'
+import Diagnose from './Diagnose'
 import Overview from './Overview'
 
 // ── Toast 通知组件 ─────────────────────────────────────────────────
@@ -206,6 +207,7 @@ function App() {
     { id: '/factors',    label: '因子自适应权重', Icon: BarChart3 },
     { id: '/jack',       label: '游资策略模拟',   Icon: Zap },
     { id: '/scanner',    label: '建仓机会扫描',   Icon: Crosshair },
+    { id: '/diagnose',   label: '诊股看盘',       Icon: ScanSearch },
     { id: '/diagnosis',  label: '建仓逻辑诊断',   Icon: Activity },
     { id: '/logs',       label: 'Agent 进化日志', Icon: Terminal },
     { id: '/hunter',     label: '胜率猎手优化器', Icon: Crosshair }, // Using Crosshair for now
@@ -218,6 +220,7 @@ function App() {
     factors:     '因子自适应权重监控',
     jack:        '博主“90后Jack”游资回测与实盘对照模拟',
     scanner:     '建仓机会实时扫描（5维因子+筹码+主力资金）',
+    diagnose:    '诊股看盘与全策略因子维度评价系统',
     diagnosis:   '建仓策略样本外归因诊断控制台',
     logs:        'Agent 进化巡航监控控制台',
     hunter:      '胜率猎手 (Win Rate Hunter) 进化引擎',
@@ -350,6 +353,7 @@ function App() {
               <Route path="/factors" element={<Factors />} />
               <Route path="/jack" element={<JackMode />} />
               <Route path="/scanner" element={<Scanner />} />
+              <Route path="/diagnose" element={<Diagnose />} />
               <Route path="/diagnosis" element={<Diagnosis />} />
               <Route path="/logs" element={<Logs />} />
               <Route path="/hunter" element={<WinRateHunter upsertToast={upsertToast} removeToast={removeToast} pollTask={pollTask} />} />

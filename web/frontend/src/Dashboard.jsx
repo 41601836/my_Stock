@@ -159,8 +159,11 @@ function Dashboard({ marketStatus }) {
                       策略信号强度 ⓘ
                     </span>
                   </th>
+                  <th className="p-4 text-right">5日涨幅</th>
+                  <th className="p-4 text-right">10日涨幅</th>
+                  <th className="p-4 text-right">20日涨幅</th>
                   <th className="p-4 text-right">昨日收盘价</th>
-                  <th className="p-4 text-right pr-6">日涨跌幅</th>
+                  <th className="p-4 text-right pr-6">今日涨跌幅</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#222F4C]/40 font-mono">
@@ -171,8 +174,28 @@ function Dashboard({ marketStatus }) {
                   return (
                     <tr key={item.stock_code} className="hover:bg-[#1A253D]/40 transition-colors">
                       <td className="p-4 pl-6 text-gray-400 font-semibold">{item.rank}</td>
-                      <td className="p-4 font-bold text-gray-200">{item.stock_code}</td>
-                      <td className="p-4 text-gray-100 font-sans font-semibold">{item.name}</td>
+                      <td className="p-4 font-bold">
+                        <a 
+                          href={`http://stockpage.10jqka.com.cn/${item.stock_code.substring(0, 6)}/`} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-indigo-400 hover:text-indigo-300 hover:underline cursor-pointer"
+                          title="在同花顺查看该股票详情"
+                        >
+                          {item.stock_code}
+                        </a>
+                      </td>
+                      <td className="p-4 font-sans font-semibold">
+                        <a 
+                          href={`http://stockpage.10jqka.com.cn/${item.stock_code.substring(0, 6)}/`} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-gray-100 hover:text-white hover:underline cursor-pointer"
+                          title="在同花顺查看该股票详情"
+                        >
+                          {item.name}
+                        </a>
+                      </td>
                       <td className="p-4 text-gray-400 font-sans">{item.industry}</td>
                       <td className="p-4">
                         <div className="flex items-center gap-2">
@@ -185,9 +208,18 @@ function Dashboard({ marketStatus }) {
                           </span>
                         </div>
                       </td>
+                      <td className={`p-4 text-right ${item.return_5d >= 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                        {item.return_5d > 0 ? '+' : ''}{(item.return_5d * 100).toFixed(2)}%
+                      </td>
+                      <td className={`p-4 text-right ${item.return_10d >= 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                        {item.return_10d > 0 ? '+' : ''}{(item.return_10d * 100).toFixed(2)}%
+                      </td>
+                      <td className={`p-4 text-right ${item.return_20d >= 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                        {item.return_20d > 0 ? '+' : ''}{(item.return_20d * 100).toFixed(2)}%
+                      </td>
                       <td className="p-4 text-right text-gray-300">{item.close_price.toFixed(2)} 元</td>
-                      <td className={`p-4 text-right pr-6 font-bold ${item.daily_change >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        {item.daily_change >= 0 ? '+' : ''}{(item.daily_change * 100).toFixed(2)}%
+                      <td className={`p-4 text-right pr-6 font-bold ${item.daily_change >= 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                        {item.daily_change > 0 ? '+' : ''}{(item.daily_change * 100).toFixed(2)}%
                       </td>
                     </tr>
                   )
