@@ -19,7 +19,7 @@ const Diagnose = () => {
 
   // Fetch available strategies on mount
   useEffect(() => {
-    fetch('http://localhost:8000/api/strategies')
+    fetch('/api/strategies')
       .then(res => res.json())
       .then(data => {
         if (data.strategies) {
@@ -48,7 +48,7 @@ const Diagnose = () => {
     }
     
     const timer = setTimeout(() => {
-      fetch(`http://localhost:8000/api/market/search-stock?query=${encodeURIComponent(query)}`)
+      fetch(`/api/market/search-stock?query=${encodeURIComponent(query)}`)
         .then(res => res.json())
         .then(data => {
           if (data.stocks) {
@@ -75,7 +75,7 @@ const Diagnose = () => {
     setResult(null)
 
     try {
-      const res = await fetch(`http://localhost:8000/api/market/diagnose?ts_code=${selectedStock.ts_code}&strategy=${selectedStrategy}`)
+      const res = await fetch(`/api/market/diagnose?ts_code=${selectedStock.ts_code}&strategy=${selectedStrategy}`)
       const data = await res.json()
       if (data.error) {
         setError(data.error)

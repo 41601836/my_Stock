@@ -29,6 +29,22 @@ LOGS_PATH        = PATHS.logs.agent_auto_run
 CRUISE_REPORT_PATH = PATHS.reports.agent_cruise
 
 
+def _get_restricted_stocks(conn):
+    """获取限制名单：ST股、次新股/新股（上市不满1年）"""
+    import datetime
+    cutoff_date = (datetime.datetime.now() - datetime.timedelta(days=365)).strftime('%Y%m%d')
+    try:
+        df_restricted = pd.read_sql(
+            f"SELECT ts_code FROM stock_list WHERE name LIKE '%ST%' OR list_date >= '{cutoff_date}'",
+            conn
+        )
+        return set(df_restricted['ts_code'].tolist())
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Failed to get restricted stocks: {e}")
+        return set()
+
+
 def _log_recommendations_to_tracker(conn, recommend_date, stocks, regime):
     """将推荐的股票快照写入追踪表，INSERT OR IGNORE 防止重复记录"""
     if not recommend_date or not stocks:
@@ -80,18 +96,41 @@ def _log_recommendations_to_tracker(conn, recommend_date, stocks, regime):
 def get_market_status():
     """获取最新市场状态（从回测 CSV 的最后一行）及数据库最新日期"""
     
-    # 获取数据库最新日期
+    # 获取数据库最新日期及健康状态
     db_latest = "—"
+    db_health = "UNKNOWN"
+    health_issues = []
+    
     try:
         if os.path.exists(DB_PATH):
             conn = sqlite3.connect(DB_PATH, timeout=10)
             conn.execute("PRAGMA journal_mode=WAL;")
-            df_db = pd.read_sql("SELECT MAX(trade_date) as md FROM daily_prices", conn)
-            val = df_db['md'].iloc[0]
-            if val:
-                v = str(val)
+            cursor = conn.cursor()
+            cursor.execute("SELECT MAX(trade_date) FROM daily_prices")
+            d = cursor.fetchone()[0]
+            if d:
+                v = str(int(d))
                 db_latest = f"{v[:4]}-{v[4:6]}-{v[6:]}"
             conn.close()
+            
+        # 读取体检报告
+        health_report_path = os.path.join(os.path.dirname(DB_PATH), "health_report.json")
+        if os.path.exists(health_report_path):
+            import json
+            with open(health_report_path, "r", encoding="utf-8") as f:
+                report = json.load(f)
+                if report.get("status") == "ERROR":
+                    db_health = "ERROR"
+                    health_issues = report.get("issues", [])
+                elif report.get("status") == "WARNING":
+                    db_health = "PARTIAL_DATA"
+                    health_issues = report.get("issues", [])
+                else:
+                    db_health = "HEALTHY"
+        else:
+            db_health = "PARTIAL_DATA"
+            health_issues = ["未找到数据体检报告，等待后台哨兵扫描..."]
+            
     except Exception as e:
         import logging
         logging.getLogger(__name__).error(f"Failed to read market status from DB: {e}")
@@ -100,6 +139,8 @@ def get_market_status():
         return {
             "trade_date": "—",
             "db_latest_date": db_latest,
+            "db_health": db_health,
+            "health_issues": health_issues,
             "regime": "Dark",
             "model_used": "Dark_Light_Track",
             "portfolio_return": 0.0,
@@ -113,6 +154,8 @@ def get_market_status():
     return {
         "trade_date": fmt_date,
         "db_latest_date": db_latest,
+        "db_health": db_health,
+        "health_issues": health_issues,
         "regime": last["regime"],
         "model_used": last["model_used"],
         "portfolio_return": float(last["portfolio_return"]),
@@ -237,7 +280,7 @@ def get_regime_dashboard():
     except Exception as e:
         return {"error": str(e)}
 
-def get_theme_stocks(sector_name: str, limit: int = 10):
+def get_theme_stocks(sector_name: str, limit: int = 10, sort_order: str = "DESC"):
     """
     获取某个游资题材（如 "互联网"）下的具体活跃个股列表
     """
@@ -251,14 +294,15 @@ def get_theme_stocks(sector_name: str, limit: int = 10):
         if not latest_date:
             return {"error": "无最新交易日数据"}
             
+        order_clause = "DESC" if sort_order.upper() == "DESC" else "ASC"
         df = pd.read_sql(
-            "SELECT s.ts_code, s.name, dp.pct_chg, db.turnover_rate, mf.net_mf_amount "
-            "FROM daily_basic db "
-            "LEFT JOIN stock_list s ON db.ts_code = s.ts_code "
-            "LEFT JOIN moneyflow mf ON db.ts_code = mf.ts_code AND mf.trade_date = db.trade_date "
-            "LEFT JOIN daily_prices dp ON db.ts_code = dp.ts_code AND dp.trade_date = db.trade_date "
-            "WHERE db.trade_date = ? AND s.industry LIKE ? "
-            "ORDER BY mf.net_mf_amount DESC LIMIT ?",
+            f"SELECT s.ts_code, s.name, dp.pct_chg, db.turnover_rate, mf.net_mf_amount "
+            f"FROM daily_basic db "
+            f"LEFT JOIN stock_list s ON db.ts_code = s.ts_code "
+            f"LEFT JOIN moneyflow mf ON db.ts_code = mf.ts_code AND mf.trade_date = db.trade_date "
+            f"LEFT JOIN daily_prices dp ON db.ts_code = dp.ts_code AND dp.trade_date = db.trade_date "
+            f"WHERE db.trade_date = ? AND s.industry LIKE ? "
+            f"ORDER BY mf.net_mf_amount {order_clause} LIMIT ?",
             conn, params=(latest_date, f"%{sector_name}%", limit)
         )
         conn.close()
@@ -353,6 +397,11 @@ def get_today_portfolio():
         )
         if df_fac.empty:
             return []
+
+        # 剔除 ST、新股、次新股
+        restricted_stocks = _get_restricted_stocks(conn)
+        if restricted_stocks:
+            df_fac = df_fac[~df_fac["stock_code"].isin(restricted_stocks)]
 
         # 横截面 RankPCT 打分
         df_fac["composite_score"] = 0.0
@@ -700,7 +749,7 @@ def get_jack_performance_data():
 # ─────────────────────────────────────────────────────────
 # 7. 建仓机会扫描（真实数据多维度打分）
 # ─────────────────────────────────────────────────────────
-def get_build_position_opportunities():
+def get_build_position_opportunities(sector_filter=None, top_n=20):
     """
     基于最新截面真实数据，多维度融合选出"可建仓"股票。
     5维信号：因子综合打分 + 筹码控盘度 + 大资金净流入 + 涨幅过滤 + 换手率合理性
@@ -723,6 +772,12 @@ def get_build_position_opportunities():
             "FROM factor_values WHERE trade_date = ?",
             conn, params=(latest_fac,)
         )
+        
+        # 剔除 ST、新股、次新股
+        restricted_stocks = _get_restricted_stocks(conn)
+        if restricted_stocks:
+            df_fac = df_fac[~df_fac["stock_code"].isin(restricted_stocks)]
+            
         _, rw = _load_pkl_weights(WEIGHTS_PATH)
         if not rw:
             rw = {"north_net_inflow_ratio": -0.18, "return_5d": -0.54, "turnover_rate_20d": -0.28}
@@ -785,9 +840,12 @@ def get_build_position_opportunities():
         # 过滤条件
         df = df[df["winner_rate"] >= 40.0]
         df = df[df["big_net_inflow"] > 0]
+        
+        if sector_filter:
+            df = df[df["industry"].str.contains(sector_filter, na=False)]
 
-        # Top 20
-        df_top = df.nlargest(20, "build_score").copy()
+        # Top N
+        df_top = df.nlargest(top_n, "build_score").copy()
         df_top["__rank"] = range(1, len(df_top) + 1)
 
         def safe_float(val, default=0.0):
@@ -883,6 +941,11 @@ def get_tracker_attribution_data():
     """
     conn = sqlite3.connect(DB_PATH)
     try:
+        def safe_flt(val, default=0.0):
+            if pd.isna(val) or val is None:
+                return default
+            return float(val)
+            
         # 1. 查询全部已结算历史记录 (以 alpha_5d 为主)
         df = pd.read_sql(
             "SELECT * FROM recommendation_tracker WHERE alpha_5d IS NOT NULL", conn
@@ -917,9 +980,9 @@ def get_tracker_attribution_data():
                     
                     decay_data.append({
                         "day": f"T+{w}",
-                        "alpha_all": round(float(val_all), 5),
-                        "alpha_high_factor": round(float(val_high), 5),
-                        "alpha_low_factor": round(float(val_low), 5)
+                        "alpha_all": round(safe_flt(val_all), 5),
+                        "alpha_high_factor": round(safe_flt(val_high), 5),
+                        "alpha_low_factor": round(safe_flt(val_low), 5)
                     })
             mock_decay = decay_data
             
@@ -934,8 +997,8 @@ def get_tracker_attribution_data():
                     regime_data.append({
                         "regime": r,
                         "count": int(count),
-                        "avg_alpha": round(float(avg_alpha), 5),
-                        "win_rate": round(float(win_rate), 3)
+                        "avg_alpha": round(safe_flt(avg_alpha), 5),
+                        "win_rate": round(safe_flt(win_rate), 3)
                     })
                 else:
                     regime_data.append({
@@ -960,14 +1023,14 @@ def get_tracker_attribution_data():
                 "ts_code": str(row["ts_code"]),
                 "name": str(row["name"]) if row["name"] else "未知",
                 "industry": str(row["industry"]) if row["industry"] else "未知",
-                "base_price": round(float(row["base_price"]), 2) if row["base_price"] else None,
+                "base_price": round(safe_flt(row["base_price"]), 2) if pd.notna(row["base_price"]) else None,
                 "regime": str(row["regime"]),
-                "factor_score": round(float(row["factor_score"]) * 100, 1),
-                "winner_rate": round(float(row["winner_rate"]), 1),
-                "chips_concentration": round(float(row["chips_concentration"]), 1),
-                "net_mf_amount": round(float(row["net_mf_amount"]), 2) if row["net_mf_amount"] else 0.0,
-                "alpha_5d": round(float(row["alpha_5d"]) * 100, 2) if row["alpha_5d"] is not None else None,
-                "ret_5d": round(float(row["ret_5d"]) * 100, 2) if row["ret_5d"] is not None else None,
+                "factor_score": round(safe_flt(row["factor_score"]) * 100, 1) if pd.notna(row["factor_score"]) else 0.0,
+                "winner_rate": round(safe_flt(row["winner_rate"]), 1) if pd.notna(row["winner_rate"]) else 0.0,
+                "chips_concentration": round(safe_flt(row["chips_concentration"]), 1) if pd.notna(row["chips_concentration"]) else 0.0,
+                "net_mf_amount": round(safe_flt(row["net_mf_amount"]), 2) if pd.notna(row["net_mf_amount"]) else 0.0,
+                "alpha_5d": round(safe_flt(row["alpha_5d"]) * 100, 2) if pd.notna(row["alpha_5d"]) else None,
+                "ret_5d": round(safe_flt(row["ret_5d"]) * 100, 2) if pd.notna(row["ret_5d"]) else None,
             })
             
         return {
@@ -1119,9 +1182,9 @@ def get_market_overview_data():
                     raw_d = str(dt)
                     style_series.append({
                         "date": f"{raw_d[4:6]}/{raw_d[6:]}",
-                        "高换手风格 (Turnover)": round(float(ret_turnover) if not pd.isna(ret_turnover) else 0.0, 2),
-                        "筹码锁仓风格 (Chips)": round(float(ret_chips) if not pd.isna(ret_chips) else 0.0, 2),
-                        "大单大市风格 (Inflow)": round(float(ret_inflow) if not pd.isna(ret_inflow) else 0.0, 2)
+                        "高换手风格 (Turnover)": round(float(ret_turnover), 2) if not pd.isna(ret_turnover) else None,
+                        "筹码锁仓风格 (Chips)": round(float(ret_chips), 2) if not pd.isna(ret_chips) else None,
+                        "大单大市风格 (Inflow)": round(float(ret_inflow), 2) if not pd.isna(ret_inflow) else None
                     })
         
         # 4.5. 游资热点题材排行榜 (Hot Money Sector Rank) + 连续上榜天数 (Streak Days)
@@ -1160,7 +1223,31 @@ def get_market_overview_data():
                 return set()
         
         # 预计算最近 9 日（不含今日）每日热点题材集合
-        hist_hot = {d: _hot_sectors_on_date(conn, d) for d in recent_dates[1:]}
+        # 用单次批量 SQL 代替逐日 N 次查询，大幅提升性能
+        recent_9_dates = recent_dates[1:]
+        hist_hot = {}
+        if recent_9_dates:
+            placeholders = ",".join(["?"]*len(recent_9_dates))
+            df_hist = pd.read_sql(
+                f"SELECT s.industry, db.turnover_rate, mf.net_mf_amount, db.trade_date "
+                f"FROM daily_basic db "
+                f"LEFT JOIN stock_list s ON db.ts_code = s.ts_code "
+                f"LEFT JOIN moneyflow mf ON db.ts_code = mf.ts_code AND mf.trade_date = db.trade_date "
+                f"WHERE db.trade_date IN ({placeholders}) AND s.industry IS NOT NULL",
+                conn, params=recent_9_dates
+            )
+            if not df_hist.empty:
+                df_hist["sector"] = df_hist["industry"].apply(lambda x: x.split(" | ")[1] if " | " in x else x)
+                for td, grp in df_hist.groupby("trade_date"):
+                    agg = grp.groupby("sector").agg({"turnover_rate": "mean", "net_mf_amount": "sum"}).reset_index()
+                    agg = agg[agg["net_mf_amount"] > 0]
+                    if agg.empty:
+                        hist_hot[td] = set()
+                        continue
+                    t_mx = agg["turnover_rate"].max() or 1.0
+                    m_mx = agg["net_mf_amount"].max() or 1.0
+                    agg["hs"] = agg["turnover_rate"] / t_mx * 60 + agg["net_mf_amount"] / m_mx * 40
+                    hist_hot[td] = set(agg.nlargest(8, "hs")["sector"].tolist())
         
         hot_money_themes = []
         if not df_hm.empty:
@@ -1255,10 +1342,12 @@ def search_stock(query: str):
     """
     conn = sqlite3.connect(DB_PATH)
     try:
+        # 安全处理查询字符串，防止中文编码异常
+        safe_query = str(query).strip()
         df = pd.read_sql(
-            f"SELECT ts_code, name, industry, market FROM stock_list "
-            f"WHERE ts_code LIKE ? OR name LIKE ? OR name LIKE ? LIMIT 10",
-            conn, params=[f"%{query}%", f"%{query}%", f"{query}%"]
+            "SELECT ts_code, name, industry, market FROM stock_list "
+            "WHERE ts_code LIKE ? OR name LIKE ? LIMIT 15",
+            conn, params=[f"%{safe_query}%", f"%{safe_query}%"]
         )
         return {"stocks": df.to_dict(orient="records")}
     except Exception as e:

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import {
   Crosshair, TrendingUp, BarChart3, Zap, RefreshCw,
   ArrowUpRight, ArrowDownRight, Minus, Info,
-  Building2, Target, Layers, DollarSign, Activity, Sparkles
+  Building2, Target, Layers, DollarSign, Activity, Sparkles, Search, X
 } from 'lucide-react'
 
 // 建仓信号强度色阶
@@ -47,19 +47,25 @@ function Scanner() {
   const [loading, setLoading]   = useState(true)
   const [selected, setSelected] = useState(null)
   const [lastUpdate, setLastUpdate] = useState(null)
+  const [sectorQuery, setSectorQuery] = useState('')
+  const [activeSector, setActiveSector] = useState('')
 
-  const fetchOpportunities = useCallback(() => {
+  const fetchOpportunities = useCallback((sector = activeSector) => {
     setLoading(true)
-    fetch('/api/scan-opportunities')
+    const url = sector 
+      ? `/api/market/sector-opportunities?sector=${encodeURIComponent(sector)}`
+      : '/api/scan-opportunities'
+    fetch(url)
       .then(res => res.json())
       .then(data => {
         setStocks(data.stocks || [])
         setMeta(data.meta || {})
         setLastUpdate(new Date())
         setLoading(false)
+        setActiveSector(sector)
       })
       .catch(() => setLoading(false))
-  }, [])
+  }, [activeSector])
 
   // 首次加载 + 每5分钟自动刷新
   useEffect(() => {
@@ -99,7 +105,7 @@ function Scanner() {
             </span>
           )}
           <button
-            onClick={fetchOpportunities}
+            onClick={() => fetchOpportunities(activeSector)}
             disabled={loading}
             className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold bg-purple-600/20 text-purple-400 border border-purple-600/30 hover:bg-purple-600/30 hover:text-purple-200 active:scale-95 transition-all disabled:opacity-50"
           >
@@ -148,10 +154,53 @@ function Scanner() {
           <Info className="h-5 w-5 text-amber-400 shrink-0" />
           <p className="text-xs text-amber-200">
             <strong>状态警告：</strong> 底层因子数据 ({formatDate(meta.factor_date)}) 落后于行情基准日 ({formatDate(meta.scan_date)})。
-            当前榜单仍在使用旧因子排序。请点击网页顶部的 <strong>「扫描因子」</strong> 按钮来同步最新大脑。
+            当前榜单仍在使用旧因子排序。请点击网页顶部的 <strong>「拉取数据」</strong> 按钮来同步底层数据。
           </p>
         </div>
       )}
+
+      {/* ── 专属板块搜索栏 */}
+      <div className="flex flex-col md:flex-row items-center gap-3 p-4 rounded-xl bg-[#151d32] border border-[#1e2a44]">
+        <div className="flex-1 w-full relative">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <input
+            type="text"
+            placeholder="输入行业或板块 (如: 半导体, 创业板, 汽车)..."
+            value={sectorQuery}
+            onChange={(e) => setSectorQuery(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && fetchOpportunities(sectorQuery)}
+            className="w-full bg-[#0B1220] border border-[#2A3F5F] text-white rounded-lg py-3 pl-12 pr-10 focus:outline-none focus:border-purple-500 transition-colors"
+          />
+          {sectorQuery && (
+            <button 
+              onClick={() => { setSectorQuery(''); fetchOpportunities(''); }}
+              className="absolute right-4 top-1/2 -translate-y-1/2 p-1 hover:bg-[#2A3F5F] rounded-md text-gray-400 transition-colors"
+              title="清除"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+        <div className="flex gap-3 w-full md:w-auto">
+          <button
+            onClick={() => fetchOpportunities(sectorQuery)}
+            disabled={!sectorQuery || loading}
+            className="flex-1 md:flex-none px-6 py-3 rounded-lg text-sm font-bold bg-purple-600 hover:bg-purple-500 disabled:bg-purple-600/50 text-white transition-all flex items-center justify-center gap-2"
+          >
+            <Target className="w-4 h-4" />
+            专属板块扫描
+          </button>
+          {activeSector && (
+            <button
+              onClick={() => { setSectorQuery(''); fetchOpportunities(''); }}
+              className="px-6 py-3 rounded-lg text-sm font-bold bg-[#2A3F5F] hover:bg-[#3B527A] text-white transition-all flex items-center justify-center gap-2"
+            >
+              <Layers className="w-4 h-4" />
+              全市场
+            </button>
+          )}
+        </div>
+      </div>
 
       {/* ── 统计卡片 */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

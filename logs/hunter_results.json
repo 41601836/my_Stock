@@ -1,13 +1,13 @@
 {
-    "timestamp": "2026-07-10 22:02:14",
+    "timestamp": "2026-07-16 00:03:05",
     "best_params": {
-        "top_n_stocks": 10,
-        "multiplier": 2.41
+        "top_n_stocks": 18,
+        "multiplier": 2.92
     },
-    "best_win_rate": 54.9,
-    "best_calmar": 4.8104,
+    "best_win_rate": 56.86,
+    "best_calmar": 3.7369,
     "start": "20260501",
-    "end": "20260710",
+    "end": "20260715",
     "generations": 5,
     "population": 20
 }

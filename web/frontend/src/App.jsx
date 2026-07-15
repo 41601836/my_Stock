@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom'
-import { LayoutDashboard, TrendingUp, BarChart3, Terminal, Activity, Wifi, ShieldAlert, Download, ScanSearch, CheckCircle2, Loader2, XCircle, X, Crosshair, RefreshCw, Zap, Globe } from 'lucide-react'
+import { LayoutDashboard, TrendingUp, BarChart3, Terminal, Activity, Wifi, ShieldAlert, Download, ScanSearch, CheckCircle2, Loader2, XCircle, X, Crosshair, RefreshCw, Zap, Globe, Menu, ChevronDown, ChevronUp } from 'lucide-react'
 import Dashboard from './Dashboard'
 import Performance from './Performance'
 import Factors from './Factors'
@@ -46,22 +46,22 @@ function ToastItem({ toast, onRemove }) {
 function App() {
   const navigate = useNavigate()
   const location = useLocation()
-  
-  // Extract path to determine active tab equivalent
+
   const currentPath = location.pathname === '/' ? 'dashboard' : location.pathname.substring(1)
-  
+
   const [marketStatus, setMarketStatus] = useState(null)
   const [apiOnline, setApiOnline] = useState(false)
   const [loading, setLoading] = useState(true)
+  // 手机端侧边栏抽屉状态
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  // 手机端操作菜单折叠状态
+  const [actionsOpen, setActionsOpen] = useState(false)
 
-  // Toast 状态管理
   const [toasts, setToasts] = useState([])
-  // 用 ref 追踪所有活跃的轮询 interval，防止内存泄漏
   const intervals = useRef({})
 
   const removeToast = useCallback((id) => {
     setToasts(prev => prev.filter(t => t.id !== id))
-    // 同时清除对应的轮询 interval
     if (intervals.current[id]) {
       clearInterval(intervals.current[id])
       delete intervals.current[id]
@@ -76,19 +76,13 @@ function App() {
     })
   }, [])
 
-  // 轮询任务状态，直到终态 (DONE / ERROR / TIMEOUT)
   const pollTask = useCallback((toastId, taskId) => {
-    // 先清理可能存在的旧 interval
-    if (intervals.current[toastId]) {
-      clearInterval(intervals.current[toastId])
-    }
-
+    if (intervals.current[toastId]) clearInterval(intervals.current[toastId])
     const tid = setInterval(async () => {
       try {
         const res = await fetch(`/api/task-status/${taskId}`)
         if (!res.ok) return
         const data = await res.json()
-
         if (data.status === 'PENDING') {
           upsertToast(toastId, 'pending', `⏳ 任务排队中... (${taskId})`)
         } else if (data.status === 'RUNNING') {
@@ -103,34 +97,26 @@ function App() {
           }
           setTimeout(() => removeToast(toastId), 10000)
         } else if (data.status === 'NOT_FOUND') {
-          // 后端重启导致 task_registry 清空，属于正常现象，静默关闭 toast
           clearInterval(tid)
           delete intervals.current[toastId]
           setTimeout(() => removeToast(toastId), 1000)
         } else if (['ERROR', 'TIMEOUT'].includes(data.status)) {
           clearInterval(tid)
           delete intervals.current[toastId]
-          const errMsg = data.error ? data.error.slice(0, 80) : data.status
-          upsertToast(toastId, 'error', `❌ ${errMsg}`)
+          upsertToast(toastId, 'error', `❌ ${data.error ? data.error.slice(0, 80) : data.status}`)
           setTimeout(() => removeToast(toastId), 8000)
         }
-      } catch (_) {
-        // 网络异常时静默跳过本次轮询
-      }
+      } catch (_) {}
     }, 2000)
-
     intervals.current[toastId] = tid
   }, [upsertToast, removeToast])
 
-  // 清理所有 interval on unmount
   useEffect(() => {
-    return () => {
-      Object.values(intervals.current).forEach(clearInterval)
-    }
+    return () => Object.values(intervals.current).forEach(clearInterval)
   }, [])
 
-  // 手动拉取数据
   const handleFetch = useCallback(async () => {
+    setActionsOpen(false)
     const toastId = `fetch-${Date.now()}`
     upsertToast(toastId, 'pending', '📡 正在启动数据拉取任务...')
     try {
@@ -145,8 +131,14 @@ function App() {
     }
   }, [upsertToast, pollTask, removeToast])
 
-  // 手动扫描因子
   const handleScan = useCallback(async () => {
+    if (marketStatus?.db_health === 'ERROR') {
+      const toastId = `scan-${Date.now()}`
+      upsertToast(toastId, 'error', '❌ 数据熔断: 发现底层数据严重异常或断层，为防止生成错误信号，扫描功能已被系统锁定！')
+      setTimeout(() => removeToast(toastId), 6000)
+      return
+    }
+    setActionsOpen(false)
     const toastId = `scan-${Date.now()}`
     upsertToast(toastId, 'pending', '🔍 正在启动因子扫描任务...')
     try {
@@ -159,10 +151,10 @@ function App() {
       upsertToast(toastId, 'error', `❌ 启动失败: ${e.message}`)
       setTimeout(() => removeToast(toastId), 6000)
     }
-  }, [upsertToast, pollTask, removeToast])
+  }, [upsertToast, pollTask, removeToast, marketStatus])
 
-  // 手动触发 simulation 回测，更新数据截止日期
   const handleBacktest = useCallback(async () => {
+    setActionsOpen(false)
     const toastId = `bt-${Date.now()}`
     upsertToast(toastId, 'pending', '📊 正在启动回测更新...')
     try {
@@ -177,28 +169,20 @@ function App() {
     }
   }, [upsertToast, pollTask, removeToast])
 
-  // 心跳轮询市场状态 (8s)
   useEffect(() => {
     const fetchStatus = () => {
       fetch('/api/status')
-        .then(res => {
-          if (!res.ok) throw new Error('offline')
-          return res.json()
-        })
-        .then(data => {
-          setMarketStatus(data)
-          setApiOnline(true)
-          setLoading(false)
-        })
-        .catch(() => {
-          setApiOnline(false)
-          setLoading(false)
-        })
+        .then(res => { if (!res.ok) throw new Error('offline'); return res.json() })
+        .then(data => { setMarketStatus(data); setApiOnline(true); setLoading(false) })
+        .catch(() => { setApiOnline(false); setLoading(false) })
     }
     fetchStatus()
     const t = setInterval(fetchStatus, 8000)
     return () => clearInterval(t)
   }, [])
+
+  // 导航并关闭手机端抽屉
+  const handleNav = (path) => { navigate(path); setSidebarOpen(false) }
 
   const navItems = [
     { id: '/overview',    label: '市场宏观全览',   Icon: Globe },
@@ -210,134 +194,166 @@ function App() {
     { id: '/diagnose',   label: '诊股看盘',       Icon: ScanSearch },
     { id: '/diagnosis',  label: '建仓逻辑诊断',   Icon: Activity },
     { id: '/logs',       label: 'Agent 进化日志', Icon: Terminal },
-    { id: '/hunter',     label: '胜率猎手优化器', Icon: Crosshair }, // Using Crosshair for now
+    { id: '/hunter',     label: '胜率猎手优化器', Icon: Crosshair },
+  ]
+
+  // 手机底部 Tab 只展示核心 5 项
+  const mobileNavItems = [
+    { id: '/overview',  label: '全览',   Icon: Globe },
+    { id: '/',         label: '仪表盘', Icon: LayoutDashboard },
+    { id: '/scanner',  label: '扫描',   Icon: Crosshair },
+    { id: '/diagnose', label: '诊股',   Icon: ScanSearch },
   ]
 
   const pageTitle = {
-    overview:    '大盘多因子量化温度与资金全览',
-    dashboard:   '策略实时仪表盘',
-    performance: '多轨回测绩效曲线',
-    factors:     '因子自适应权重监控',
-    jack:        '博主“90后Jack”游资回测与实盘对照模拟',
-    scanner:     '建仓机会实时扫描（5维因子+筹码+主力资金）',
-    diagnose:    '诊股看盘与全策略因子维度评价系统',
-    diagnosis:   '建仓策略样本外归因诊断控制台',
-    logs:        'Agent 进化巡航监控控制台',
-    hunter:      '胜率猎手 (Win Rate Hunter) 进化引擎',
+    overview: '市场宏观全览', dashboard: '策略实时仪表盘',
+    performance: '多轨回测绩效曲线', factors: '因子自适应权重监控',
+    jack: '游资策略模拟', scanner: '建仓机会实时扫描',
+    diagnose: '诊股看盘', diagnosis: '建仓策略归因诊断',
+    logs: 'Agent 进化巡航监控', hunter: '胜率猎手进化引擎',
   }
+
+  // 侧边栏内容（桌面 & 手机共用）
+  const SidebarContent = () => (
+    <>
+      <div>
+        <div className="p-5 border-b border-[#1F2937] flex items-center space-x-3">
+          <div className="p-2 bg-purple-500/10 rounded-lg border border-purple-500/30">
+            <Activity className="h-5 w-5 text-purple-400" />
+          </div>
+          <div>
+            <h1 className="text-base font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-indigo-300">鞋底刺刺向心底</h1>
+            <span className="text-xs text-gray-500 font-mono">策略控制台 v2.0</span>
+          </div>
+        </div>
+        <nav className="p-3 space-y-0.5">
+          {navItems.map(({ id, label, Icon }) => {
+            const isActive = location.pathname === id
+            return (
+              <button key={id} onClick={() => handleNav(id)}
+                className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm transition-all ${isActive ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20' : 'text-gray-400 hover:bg-[#1F2937] hover:text-gray-100'}`}>
+                <Icon className="h-4 w-4 shrink-0" />
+                <span>{label}</span>
+              </button>
+            )
+          })}
+        </nav>
+      </div>
+      <div className="p-4 border-t border-[#1F2937] bg-[#0E1321] text-xs text-gray-500 space-y-1.5">
+        <div className="flex items-center justify-between">
+          <span>策略引擎:</span>
+          {apiOnline
+            ? <span className="flex items-center text-emerald-400 font-mono"><Wifi className="h-3 w-3 mr-1" />ONLINE</span>
+            : <span className="flex items-center text-rose-500 font-mono"><ShieldAlert className="h-3 w-3 mr-1" />OFFLINE</span>}
+        </div>
+        <div className="font-mono">数据截止: {marketStatus?.db_latest_date || '—'}</div>
+      </div>
+    </>
+  )
 
   return (
     <div className="flex h-screen bg-[#0B0F19] text-gray-100 overflow-hidden font-sans">
-      {/* ─── 侧边栏 ─────────────────────────────────────────────── */}
-      <aside className="w-64 bg-[#111827] border-r border-[#1F2937] flex flex-col justify-between shrink-0">
-        <div>
-          {/* Logo */}
-          <div className="p-6 border-b border-[#1F2937] flex items-center space-x-3">
-            <div className="p-2 bg-purple-500/10 rounded-lg border border-purple-500/30">
-              <Activity className="h-6 w-6 text-purple-400" />
-            </div>
-            <div>
-              <h1 className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-indigo-300">Antigravity</h1>
-              <span className="text-xs text-gray-500 font-mono">策略控制台 v2.0</span>
-            </div>
-          </div>
 
-          {/* 导航 */}
-          <nav className="p-4 space-y-1">
-            {navItems.map(({ id, label, Icon }) => {
-              const isActive = location.pathname === id;
-              return (
-                <button
-                  key={id}
-                  onClick={() => navigate(id)}
-                  className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-sm transition-all ${
-                    isActive
-                      ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
-                      : 'text-gray-400 hover:bg-[#1F2937] hover:text-gray-100'
-                  }`}
-                >
-                  <Icon className="h-4 w-4 shrink-0" />
-                  <span>{label}</span>
-                </button>
-              )
-            })}
-          </nav>
-        </div>
-
-        {/* 底部状态 */}
-        <div className="p-4 border-t border-[#1F2937] bg-[#0E1321] text-xs text-gray-500 space-y-1.5">
-          <div className="flex items-center justify-between">
-            <span>策略引擎:</span>
-            {apiOnline ? (
-              <span className="flex items-center text-emerald-400 font-mono">
-                <Wifi className="h-3 w-3 mr-1" />ONLINE
-              </span>
-            ) : (
-              <span className="flex items-center text-rose-500 font-mono">
-                <ShieldAlert className="h-3 w-3 mr-1" />OFFLINE
-              </span>
-            )}
-          </div>
-          <div className="font-mono">数据截止: {marketStatus?.db_latest_date || '—'}</div>
-        </div>
+      {/* ─── 桌面端侧边栏 (md+) ─────────────────────────────────── */}
+      <aside className="hidden md:flex w-56 lg:w-64 bg-[#111827] border-r border-[#1F2937] flex-col justify-between shrink-0">
+        <SidebarContent />
       </aside>
 
-      {/* ─── 主体 ───────────────────────────────────────────────── */}
-      <main className="flex-1 flex flex-col overflow-hidden bg-[#0D1220]">
+      {/* ─── 手机端遮罩 ────────────────────────────────────────── */}
+      {sidebarOpen && (
+        <div className="md:hidden fixed inset-0 z-40 bg-black/60 backdrop-blur-sm" onClick={() => setSidebarOpen(false)} />
+      )}
+
+      {/* ─── 手机端抽屉侧边栏 ──────────────────────────────────── */}
+      <aside className={`md:hidden fixed top-0 left-0 h-full w-64 z-50 bg-[#111827] border-r border-[#1F2937] flex flex-col justify-between transition-transform duration-300 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <div className="absolute top-3 right-3">
+          <button onClick={() => setSidebarOpen(false)} className="p-1.5 rounded-lg text-gray-400 hover:bg-[#1F2937]">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <SidebarContent />
+      </aside>
+
+      {/* ─── 主体内容 ─────────────────────────────────────────── */}
+      <main className="flex-1 flex flex-col overflow-hidden bg-[#0D1220] min-w-0">
+
         {/* 顶栏 */}
-        <header className="h-16 border-b border-[#1F2937] flex items-center justify-between px-8 bg-[#111827] shrink-0">
-          <h2 className="text-lg font-semibold text-gray-100">
-            {pageTitle[currentPath] || '策略控制台'}
-          </h2>
+        <header className="h-12 md:h-16 border-b border-[#1F2937] flex items-center justify-between px-3 md:px-8 bg-[#111827] shrink-0 gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            {/* 手机端汉堡菜单 */}
+            <button onClick={() => setSidebarOpen(true)} className="md:hidden p-1.5 rounded-lg text-gray-400 hover:bg-[#1F2937] shrink-0">
+              <Menu className="h-5 w-5" />
+            </button>
+            <h2 className="text-sm md:text-lg font-semibold text-gray-100 truncate">
+              {pageTitle[currentPath] || '策略控制台'}
+            </h2>
+          </div>
 
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 mr-4 text-xs font-mono text-gray-400 bg-[#151d32] px-3 py-1.5 rounded border border-slate-700/50">
-              <span className={`h-2 w-2 rounded-full ${marketStatus?.db_latest_date && marketStatus.db_latest_date !== '—' ? 'bg-emerald-400' : 'bg-rose-400'}`} />
-              数据更新至: {marketStatus?.db_latest_date || '加载中...'}
+          {/* 桌面端完整按钮组 */}
+          <div className="hidden md:flex items-center gap-3">
+            <div className="flex items-center gap-2 mr-2 text-xs font-mono text-gray-400 bg-[#151d32] px-3 py-1.5 rounded border border-slate-700/50 relative group cursor-help z-50">
+              <span className={`h-2 w-2 rounded-full ${marketStatus?.db_health === 'ERROR' ? 'bg-rose-500 animate-ping' : marketStatus?.db_health === 'PARTIAL_DATA' ? 'bg-amber-400 animate-pulse' : (marketStatus?.db_latest_date && marketStatus.db_latest_date !== '—' ? 'bg-emerald-400' : 'bg-rose-400')}`} />
+              {marketStatus?.db_health === 'ERROR' ? <span className="text-rose-400 font-bold">数据异常熔断锁定</span> : marketStatus?.db_health === 'PARTIAL_DATA' ? `数据更新至: ${marketStatus?.db_latest_date} (部分暂缺)` : `数据更新至: ${marketStatus?.db_latest_date || '加载中...'}`}
+              
+              {/* 健康状态 Tooltip */}
+              {marketStatus?.health_issues && marketStatus.health_issues.length > 0 && (
+                <div className="absolute top-full left-0 mt-2 w-80 p-3 bg-gray-900 border border-gray-700 rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all">
+                  <div className="text-gray-300 font-bold mb-1">系统巡检报告:</div>
+                  <ul className="list-disc pl-4 space-y-1 text-gray-400 whitespace-normal">
+                    {marketStatus.health_issues.map((issue, idx) => (
+                      <li key={idx} className={marketStatus.db_health === 'ERROR' ? 'text-rose-400' : ''}>{issue}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
-
-            {/* 拉取数据按钮 */}
-            <button
-              onClick={handleFetch}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold bg-sky-600/20 text-sky-400 border border-sky-600/30 hover:bg-sky-600/30 hover:text-sky-200 active:scale-95 transition-all"
-            >
-              <Download className="h-3.5 w-3.5" />
-              <span>拉取数据</span>
+            <button onClick={handleFetch} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold bg-sky-600/20 text-sky-400 border border-sky-600/30 hover:bg-sky-600/30 active:scale-95 transition-all">
+              <Download className="h-3.5 w-3.5" /><span>拉取数据</span>
             </button>
-
-            {/* 扫描因子按钮 */}
-            <button
-              onClick={handleScan}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold bg-amber-600/20 text-amber-400 border border-amber-600/30 hover:bg-amber-600/30 hover:text-amber-200 active:scale-95 transition-all"
+            <button 
+              onClick={handleScan} 
+              disabled={marketStatus?.db_health === 'ERROR'}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold transition-all ${marketStatus?.db_health === 'ERROR' ? 'bg-rose-900/20 text-rose-500/50 border-rose-900/30 cursor-not-allowed' : 'bg-amber-600/20 text-amber-400 border-amber-600/30 hover:bg-amber-600/30 active:scale-95'}`}
             >
-              <ScanSearch className="h-3.5 w-3.5" />
-              <span>扫描因子</span>
+              <ScanSearch className="h-3.5 w-3.5" /><span>扫描因子</span>
             </button>
-
-            {/* 更新回测按钮 */}
-            <button
-              onClick={handleBacktest}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold bg-emerald-600/20 text-emerald-400 border border-emerald-600/30 hover:bg-emerald-600/30 hover:text-emerald-200 active:scale-95 transition-all"
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-              <span>更新回测</span>
+            <button onClick={handleBacktest} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold bg-emerald-600/20 text-emerald-400 border border-emerald-600/30 hover:bg-emerald-600/30 active:scale-95 transition-all">
+              <RefreshCw className="h-3.5 w-3.5" /><span>更新回测</span>
             </button>
-
-            {/* 策略选择器 */}
             <StrategySelector upsertToast={upsertToast} />
-
-            <button
-              onClick={() => navigate('/logs')}
-              title="点击查看 Agent 进化路由状态"
-              className="text-xs px-3 py-1 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20 font-mono hover:bg-purple-500/20 hover:text-purple-300 transition-colors"
-            >
+            <button onClick={() => navigate('/logs')} className="text-xs px-3 py-1 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20 font-mono hover:bg-purple-500/20 transition-colors">
               自适应路由模式
             </button>
           </div>
+
+          {/* 手机端折叠操作菜单 */}
+          <div className="md:hidden relative shrink-0">
+            <button onClick={() => setActionsOpen(v => !v)}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-purple-600/20 text-purple-400 border border-purple-600/30 active:scale-95 transition-all">
+              操作
+              {actionsOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+            </button>
+            {actionsOpen && (
+              <div className="absolute right-0 top-full mt-1 w-40 bg-[#111827] border border-[#1F2937] rounded-xl shadow-2xl z-50 overflow-hidden">
+                <div className="px-3 py-2 text-[10px] text-gray-500 font-mono border-b border-[#1F2937]">
+                  数据: {marketStatus?.db_latest_date || '—'} {marketStatus?.db_health === 'PARTIAL_DATA' && <span className="text-amber-400">(暂缺)</span>}
+                </div>
+                <button onClick={handleFetch} className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-sky-400 hover:bg-[#1F2937] transition-colors">
+                  <Download className="h-4 w-4" />拉取数据
+                </button>
+                <button onClick={handleScan} className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-amber-400 hover:bg-[#1F2937] transition-colors">
+                  <ScanSearch className="h-4 w-4" />扫描因子
+                </button>
+                <button onClick={handleBacktest} className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-emerald-400 hover:bg-[#1F2937] transition-colors">
+                  <RefreshCw className="h-4 w-4" />更新回测
+                </button>
+              </div>
+            )}
+          </div>
         </header>
 
-        {/* 内容区 */}
-        <div className="flex-1 overflow-y-auto p-8">
+        {/* 内容区：手机底部为 Tab 栏留出空间 */}
+        <div className="flex-1 overflow-y-auto p-3 md:p-8 pb-20 md:pb-8">
           {loading ? (
             <div className="flex items-center justify-center h-full">
               <div className="flex flex-col items-center gap-4 text-gray-500">
@@ -362,8 +378,29 @@ function App() {
         </div>
       </main>
 
-      {/* ─── 全局 Toast 浮层 ──────────────────────────────────────── */}
-      <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2 w-80 pointer-events-none">
+      {/* ─── 手机端底部 Tab 导航栏 ────────────────────────────── */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-[#111827]/95 backdrop-blur-md border-t border-[#1F2937] flex items-stretch" style={{ height: '56px' }}>
+        {mobileNavItems.map(({ id, label, Icon }) => {
+          const isActive = location.pathname === id
+          return (
+            <button key={id} onClick={() => handleNav(id)}
+              className={`flex-1 flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-all active:scale-95 relative ${isActive ? 'text-purple-400' : 'text-gray-500'}`}>
+              {isActive && <span className="absolute top-0 left-1/2 -translate-x-1/2 h-0.5 w-8 bg-purple-500 rounded-b-full" />}
+              <Icon className="h-5 w-5" />
+              <span>{label}</span>
+            </button>
+          )
+        })}
+        {/* 更多按钮 */}
+        <button onClick={() => setSidebarOpen(true)}
+          className="flex-1 flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium text-gray-500 active:scale-95">
+          <Menu className="h-5 w-5" />
+          <span>更多</span>
+        </button>
+      </nav>
+
+      {/* ─── 全局 Toast 浮层 ──────────────────────────────────── */}
+      <div className="fixed bottom-16 md:bottom-6 right-4 md:right-6 z-50 flex flex-col gap-2 w-72 md:w-80 pointer-events-none">
         {toasts.map(toast => (
           <div key={toast.id} className="pointer-events-auto">
             <ToastItem toast={toast} onRemove={removeToast} />

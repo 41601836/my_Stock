@@ -18,6 +18,8 @@ if _PROJECT_ROOT not in sys.path:
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 import uvicorn
 import subprocess
 import threading
@@ -145,6 +147,36 @@ def _run_bg_task(task_id: str, cmd: list, cwd: str, timeout: int = 600):
         task_registry[task_id]["error"] = str(e)
     task_registry[task_id]["finished_at"] = time.strftime("%H:%M:%S")
 
+scheduler = BackgroundScheduler()
+
+def _scheduled_fetch():
+    if is_task_running("fetch"):
+        return
+    task_id = f"fetch-cron-{uuid.uuid4().hex[:6]}"
+    task_registry[task_id] = {"type": "fetch", "status": "PENDING", "started_at": None, "output": "", "error": ""}
+    cmd = ["bash", "-c", f"{sys.executable} scripts/update_daily_data.py && PYTHONPATH=. {sys.executable} src/feature_engineering.py && {sys.executable} scripts/data_health_check.py"]
+    t = threading.Thread(target=_run_bg_task, args=(task_id, cmd, PROJECT_ROOT, 900), daemon=True)
+    t.start()
+
+def _scheduled_health_check():
+    import subprocess
+    try:
+        subprocess.run([sys.executable, "scripts/data_health_check.py"], cwd=PROJECT_ROOT)
+    except Exception as e:
+        import logging
+        logging.error(f"Health check scheduled task failed: {e}")
+
+@app.on_event("startup")
+def startup_event():
+    scheduler.add_job(_scheduled_fetch, CronTrigger(day_of_week='mon-fri', hour=18, minute=30))
+    scheduler.add_job(_scheduled_fetch, CronTrigger(day_of_week='mon-fri', hour=20, minute=30))
+    scheduler.add_job(_scheduled_health_check, CronTrigger(day_of_week='mon-fri', hour=8, minute=30))
+    scheduler.start()
+
+@app.on_event("shutdown")
+def shutdown_event():
+    scheduler.shutdown()
+
 @app.post("/api/run-fetch")
 def api_run_fetch():
     """
@@ -155,7 +187,7 @@ def api_run_fetch():
         
     task_id = f"fetch-{uuid.uuid4().hex[:6]}"
     task_registry[task_id] = {"type": "fetch", "status": "PENDING", "started_at": None, "output": "", "error": ""}
-    cmd = ["bash", "-c", "python3 scripts/update_daily_data.py && PYTHONPATH=. python3 src/feature_engineering.py"]
+    cmd = ["bash", "-c", f"{sys.executable} scripts/update_daily_data.py && PYTHONPATH=. {sys.executable} src/feature_engineering.py && {sys.executable} scripts/data_health_check.py"]
     t = threading.Thread(target=_run_bg_task, args=(task_id, cmd, PROJECT_ROOT, 900), daemon=True)
     t.start()
     return {"task_id": task_id, "status": "PENDING", "message": "数据拉取任务已启动，预计耗时 1-3 分钟..."}
@@ -170,7 +202,7 @@ def api_run_scan():
         
     task_id = f"scan-{uuid.uuid4().hex[:6]}"
     task_registry[task_id] = {"type": "scan", "status": "PENDING", "started_at": None, "output": "", "error": ""}
-    cmd = ["python3", os.path.join(PROJECT_ROOT, "agent", "run_agent.py"), "--mode", "quick"]
+    cmd = [sys.executable, os.path.join(PROJECT_ROOT, "agent", "run_agent.py"), "--mode", "quick"]
     t = threading.Thread(target=_run_bg_task, args=(task_id, cmd, PROJECT_ROOT, 600), daemon=True)
     t.start()
     return {"task_id": task_id, "status": "PENDING", "message": "因子效能扫描已启动，预计耗时 2-4 分钟..."}
@@ -185,7 +217,7 @@ def api_run_backtest():
         
     task_id = f"bt-{uuid.uuid4().hex[:6]}"
     task_registry[task_id] = {"type": "backtest", "status": "PENDING", "started_at": None, "output": "", "error": ""}
-    cmd = ["python3", os.path.join(PROJECT_ROOT, "agent", "run_agent.py"), "--mode", "simulation"]
+    cmd = [sys.executable, os.path.join(PROJECT_ROOT, "agent", "run_agent.py"), "--mode", "simulation"]
     t = threading.Thread(target=_run_bg_task, args=(task_id, cmd, PROJECT_ROOT, 600), daemon=True)
     t.start()
     return {"task_id": task_id, "status": "PENDING", "message": "回测仿真已启动，更新数据截止日期，预计耗时 1-2 分钟..."}
@@ -310,6 +342,15 @@ def api_scan_opportunities():
     """
     return get_build_position_opportunities()
 
+@app.get("/api/market/sector-opportunities")
+def api_sector_opportunities(sector: str = ""):
+    """
+    根据主板块或行业名称过滤，返回 5 维评分最高的 Top 10 股票
+    """
+    if not sector:
+        return {"error": "Sector parameter is required", "stocks": []}
+    return get_build_position_opportunities(sector_filter=sector, top_n=10)
+
 @app.get("/api/tracker/attribution")
 def api_tracker_attribution():
     """
@@ -339,13 +380,13 @@ def api_market_regime_dashboard():
     return get_regime_dashboard()
 
 @app.get("/api/market/theme-stocks")
-def api_market_theme_stocks(sector: str = ""):
+def api_market_theme_stocks(sector: str = "", sort: str = "desc"):
     """
     获取游资热点题材下的具体股票列表
     """
     if not sector:
         return {"error": "Sector parameter is required"}
-    return get_theme_stocks(sector)
+    return get_theme_stocks(sector, limit=10, sort_order=sort)
 
 @app.get("/api/market/search-stock")
 def api_market_search_stock(query: str = ""):

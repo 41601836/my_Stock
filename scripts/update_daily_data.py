@@ -63,6 +63,15 @@ def fetch_table_data(pro, conn, table_name, fetch_func, dates, date_param="trade
                 print(f"❌ 数据库操作失败: {e}")
                 raise e
         
+        if table_name == "moneyflow":
+            # 修复 Tushare API net_mf_amount 为 0 或等于总买入金额的 Bug，手动重构真实的净大单流入
+            required_cols = ["buy_lg_amount", "buy_elg_amount", "sell_lg_amount", "sell_elg_amount"]
+            if all(col in df_all.columns for col in required_cols):
+                df_all["net_mf_amount"] = (
+                    df_all["buy_lg_amount"].fillna(0) + df_all["buy_elg_amount"].fillna(0)
+                    - df_all["sell_lg_amount"].fillna(0) - df_all["sell_elg_amount"].fillna(0)
+                )
+        
         if table_name == "stock_cyq_perf":
             # 兼容处理: 若 Tushare 增量数据不含 chips_peak_pct，利用 cost_95pct 和 cost_5pct 本地重构计算，保障界面数据完整
             if "chips_peak_pct" not in df_all.columns or df_all["chips_peak_pct"].isnull().all():
@@ -102,52 +111,61 @@ def main():
         # 开启 WAL 模式以支持高并发读取和写入
         conn.execute("PRAGMA journal_mode=WAL;")
         
-        # 动态获取增量拉取的交易日列表
-        try:
-            cursor = conn.cursor()
-            cursor.execute("SELECT MAX(trade_date) FROM daily_prices")
-            max_date = cursor.fetchone()[0]
-        except Exception as e:
-            print(f"⚠️ 查询本地数据库最大日期失败: {e}")
-            max_date = None
-
-        if not max_date:
-            max_date = (datetime.now() - timedelta(days=5)).strftime("%Y%m%d")
-
-        start_dt = datetime.strptime(max_date, "%Y%m%d") + timedelta(days=1)
-        start_date = start_dt.strftime("%Y%m%d")
         end_date = datetime.now().strftime("%Y%m%d")
 
-        print(f"📅 本地数据库最新日期: {max_date}，拉取区间: {start_date} 至 {end_date}")
+        def fetch_for_table(table_name, fetch_func):
+            try:
+                cursor = conn.cursor()
+                cursor.execute(f"SELECT MAX(trade_date) FROM {table_name}")
+                max_date = cursor.fetchone()[0]
+            except Exception as e:
+                max_date = None
 
-        try:
-            cal_df = pro.trade_cal(exchange='', start_date=start_date, end_date=end_date)
-            open_cal = cal_df[cal_df['is_open'] == 1]
-            target_dates = open_cal['cal_date'].tolist()
-            target_dates.sort()
-        except Exception as e:
-            print(f"⚠️ 获取交易日历失败: {e}，将采用周末排除降级方案")
-            d_range = pd.date_range(start=pd.to_datetime(start_date), end=pd.to_datetime(end_date))
-            target_dates = [d.strftime("%Y%m%d") for d in d_range if d.weekday() < 5]
+            if not max_date:
+                max_date = (datetime.now() - timedelta(days=5)).strftime("%Y%m%d")
 
-        if not target_dates:
-            print("✅ 数据已是最新，无需更新")
-            return
+            start_dt = datetime.strptime(max_date, "%Y%m%d") + timedelta(days=1)
+            start_date = start_dt.strftime("%Y%m%d")
+            
+            if start_date > end_date:
+                print(f"✅ {table_name} 数据已是最新 (截止 {max_date})")
+                return
 
-        print(f"🎯 需要拉取的交易日列表: {target_dates}")
-        
-        fetch_table_data(pro, conn, "daily_prices", pro.daily, target_dates)
-        fetch_table_data(pro, conn, "daily_basic", pro.daily_basic, target_dates)
-        fetch_table_data(pro, conn, "moneyflow", pro.moneyflow, target_dates)
-        fetch_table_data(pro, conn, "stock_cyq_perf", pro.cyq_perf, target_dates)
-        fetch_table_data(pro, conn, "stk_factor", pro.stk_factor, target_dates)
+            try:
+                cal_df = pro.trade_cal(exchange='', start_date=start_date, end_date=end_date)
+                open_cal = cal_df[cal_df['is_open'] == 1]
+                target_dates = open_cal['cal_date'].tolist()
+                target_dates.sort()
+            except Exception as e:
+                print(f"⚠️ 获取交易日历失败: {e}，将采用周末排除降级方案")
+                d_range = pd.date_range(start=pd.to_datetime(start_date), end=pd.to_datetime(end_date))
+                target_dates = [d.strftime("%Y%m%d") for d in d_range if d.weekday() < 5]
+
+            if not target_dates:
+                print(f"✅ {table_name} 数据已是最新 (无新交易日)")
+                return
+
+            print(f"🎯 {table_name} 需要拉取: {target_dates}")
+            fetch_table_data(pro, conn, table_name, fetch_func, target_dates)
+
+        fetch_for_table("daily_prices", pro.daily)
+        fetch_for_table("daily_basic", pro.daily_basic)
+        fetch_for_table("moneyflow", pro.moneyflow)
+        fetch_for_table("stock_cyq_perf", pro.cyq_perf)
+        fetch_for_table("stk_factor", pro.stk_factor)
         
     finally:
         conn.close()
         try:
             # 自动联动运行归因结算器，结算历史推荐在样本外的远期超额表现
-            from scripts.tracker_updater import update_recommendation_performance
-            update_recommendation_performance()
+            import importlib.util
+            _spec = importlib.util.spec_from_file_location(
+                "tracker_updater",
+                os.path.join(PROJECT_ROOT, "scripts", "tracker_updater.py")
+            )
+            _mod = importlib.util.module_from_spec(_spec)
+            _spec.loader.exec_module(_mod)
+            _mod.update_recommendation_performance()
         except Exception as e:
             print(f"⚠️ 推荐跟踪结算异常: {e}")
         

@@ -184,6 +184,7 @@ def calculate_stock_factors(db_path=None):
     
     table_name = "factor_values"
     try:
+        conn.execute(f"DROP INDEX IF EXISTS idx_factors_date_code")
         conn.execute(f"DROP TABLE IF EXISTS {table_name}")
     except Exception as e:
         import logging

@@ -1,0 +1,26 @@
+{
+    "run_mode": "simulation",
+    "run_date": "20260713",
+    "simulation_metrics": {
+        "total_return": 1.453990783085366,
+        "annualized_return": 1.4975689952539994,
+        "annualized_volatility": 1.146211021612103,
+        "max_drawdown": -0.18850003285464864,
+        "calmar_ratio": 7.944661720079204,
+        "excess_total_return": 0.7892368670541681,
+        "excess_annual_return": 0.809764685871734,
+        "excess_annual_volatility": 0.6428714360408055,
+        "excess_max_drawdown": -0.3519177301326518,
+        "excess_calmar_ratio": 2.301005651424557,
+        "win_rate": 0.3333333333333333,
+        "excess_win_rate": 0.27450980392156865,
+        "weeks": 51
+    },
+    "route_summary": {
+        "range_weeks": 22,
+        "bull_weeks": 13,
+        "empty_weeks": 0,
+        "defense_weeks": 16,
+        "total_weeks": 51
+    }
+}

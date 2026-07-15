@@ -11,12 +11,12 @@ export default function Diagnosis() {
   const fetchAttribution = async () => {
     setLoading(true)
     try {
-      const res = await fetch('http://localhost:8000/api/tracker/attribution')
+      const res = await fetch('/api/tracker/attribution')
       if (!res.ok) throw new Error('Failed to fetch attribution metrics')
       const json = await res.json()
       setData(json)
       
-      const resPeriod = await fetch('http://localhost:8000/api/tracker/adaptive-period')
+      const resPeriod = await fetch('/api/tracker/adaptive-period')
       if (resPeriod.ok) {
         const jsonPeriod = await resPeriod.json()
         setAdaptivePeriod(jsonPeriod.adaptive_period || 20)

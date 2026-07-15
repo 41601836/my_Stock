@@ -45,6 +45,18 @@ def compute_historical_ic_series(db_path, csv_path, factors):
     query_factors = f"SELECT * FROM factor_values"
     df_factors = pd.read_sql(query_factors, conn)
     df_factors["trade_date"] = df_factors["trade_date"].astype(str)
+    
+    # 剔除 ST、新股、次新股
+    import datetime
+    cutoff = (datetime.datetime.now() - datetime.timedelta(days=365)).strftime('%Y%m%d')
+    try:
+        df_restricted = pd.read_sql(f"SELECT ts_code FROM stock_list WHERE name LIKE '%ST%' OR list_date >= '{cutoff}'", conn)
+        restricted = set(df_restricted['ts_code'].tolist())
+        if restricted:
+            df_factors = df_factors[~df_factors["stock_code"].isin(restricted)]
+    except Exception as e:
+        print(f"⚠️ [Validator] 读取限制名单失败: {e}")
+        
     conn.close()
     
     # 3. 读取状态标签

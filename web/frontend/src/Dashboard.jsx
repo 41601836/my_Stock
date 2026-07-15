@@ -86,7 +86,7 @@ function Dashboard({ marketStatus }) {
         <div className="p-6 bg-[#151D30] rounded-2xl border border-[#222F4C] space-y-3">
           <span className="text-xs text-gray-400 font-mono">当日持仓表现</span>
           <div className="flex items-baseline space-x-2">
-            <span className={`text-3xl font-bold font-mono ${totalProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+            <span className={`text-3xl font-bold font-mono ${totalProfit >= 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
               {totalProfit >= 0 ? '+' : ''}{totalProfit.toLocaleString('zh-CN', { maximumFractionDigits: 2 })} 元
             </span>
           </div>
@@ -97,7 +97,7 @@ function Dashboard({ marketStatus }) {
               <ArrowDownRight className="h-4 w-4 text-rose-500 mr-1" />
             )}
             <span>日涨跌率: </span>
-            <span className={`ml-1 font-mono font-semibold ${avgChange >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+            <span className={`ml-1 font-mono font-semibold ${avgChange >= 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
               {(avgChange * 100).toFixed(2)}%
             </span>
           </div>
@@ -106,7 +106,7 @@ function Dashboard({ marketStatus }) {
         <div className="p-6 bg-[#151D30] rounded-2xl border border-[#222F4C] space-y-3">
           <span className="text-xs text-gray-400 font-mono">本周基准表现 (Benchmark)</span>
           <div className="flex items-baseline space-x-2">
-            <span className={`text-3xl font-bold font-mono ${marketStatus?.benchmark_return >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+            <span className={`text-3xl font-bold font-mono ${marketStatus?.benchmark_return >= 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
               {marketStatus?.benchmark_return >= 0 ? '+' : ''}{(marketStatus?.benchmark_return * 100).toFixed(2)}%
             </span>
           </div>

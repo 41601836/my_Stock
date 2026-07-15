@@ -18,8 +18,8 @@ export default function WinRateHunter({ upsertToast, removeToast, pollTask }) {
     setLoadingResult(true)
     try {
       const [res1, res2] = await Promise.all([
-        fetch('http://localhost:8000/api/hunter/result'),
-        fetch('http://localhost:8000/api/portfolio')
+        fetch('/api/hunter/result'),
+        fetch('/api/portfolio')
       ])
       
       if (res1.ok) {

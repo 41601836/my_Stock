@@ -48,7 +48,7 @@ export default function Overview() {
     setLoadingStyleStocks(true)
     setStyleStocksData(null)
     try {
-      const res = await fetch(`http://localhost:8000/api/market/style-stocks?date=${encodeURIComponent(date)}&style=${encodeURIComponent(style)}`)
+      const res = await fetch(`/api/market/style-stocks?date=${encodeURIComponent(date)}&style=${encodeURIComponent(style)}`)
       if (!res.ok) throw new Error('获取风格个股失败')
       const data = await res.json()
       setStyleStocksData(data)
@@ -60,12 +60,12 @@ export default function Overview() {
     }
   }
 
-  const fetchThemeStocks = async (sector) => {
+  const fetchThemeStocks = async (sector, sort = 'desc') => {
     setSelectedTheme(sector)
     setLoadingTheme(true)
     setThemeStocks(null)
     try {
-      const res = await fetch(`http://localhost:8000/api/market/theme-stocks?sector=${encodeURIComponent(sector)}`)
+      const res = await fetch(`/api/market/theme-stocks?sector=${encodeURIComponent(sector)}&sort=${sort}`)
       if (!res.ok) throw new Error('获取题材股票失败')
       const data = await res.json()
       setThemeStocks(data)
@@ -81,8 +81,8 @@ export default function Overview() {
     setLoading(true)
     try {
       const [res1, res2] = await Promise.all([
-        fetch('http://localhost:8000/api/market/overview'),
-        fetch('http://localhost:8000/api/market/regime-dashboard')
+        fetch('/api/market/overview'),
+        fetch('/api/market/regime-dashboard')
       ])
       if (!res1.ok || !res2.ok) throw new Error('Failed to fetch market data')
       setData(await res1.json())
@@ -115,8 +115,8 @@ export default function Overview() {
   }
 
   const pieData = [
-    { name: '上涨', value: data?.adv_dec?.up || 0, color: '#10b981' },
-    { name: '下跌', value: data?.adv_dec?.down || 0, color: '#f43f5e' },
+    { name: '上涨', value: data?.adv_dec?.up || 0, color: '#f43f5e' },
+    { name: '下跌', value: data?.adv_dec?.down || 0, color: '#10b981' },
     { name: '平盘', value: data?.adv_dec?.flat || 0, color: '#374151' },
   ]
   const totalStocks = pieData.reduce((s, d) => s + d.value, 0)
@@ -148,7 +148,7 @@ export default function Overview() {
       {/* 顶部状态栏 */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 18px', background: '#0d1117', border: '1px solid #21262d', borderRadius: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#10b981', boxShadow: '0 0 8px #10b981' }} />
+          <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#f43f5e', boxShadow: '0 0 8px #f43f5e' }} />
           <span style={{ fontSize: 11, color: '#8b949e', fontFamily: 'monospace' }}>市场宏观全览</span>
           <span style={{ fontSize: 11, color: '#30363d' }}>·</span>
           <span style={{ fontSize: 11, color: '#6e7681', fontFamily: 'monospace' }}>基准日 {dateStr}</span>
@@ -162,11 +162,11 @@ export default function Overview() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
 
         {/* 赚钱效应 */}
-        <div style={card(null, '#10b981')}>
-          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: 'linear-gradient(90deg, transparent, #10b98160, transparent)' }} />
+        <div style={card(null, '#f43f5e')}>
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: 'linear-gradient(90deg, transparent, #f43f5e60, transparent)' }} />
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: 10, color: '#8b949e', fontFamily: 'monospace', letterSpacing: '0.05em' }}>今日赚钱效应  ADV/DEC</span>
-            <span style={{ fontSize: 9, padding: '2px 8px', borderRadius: 20, background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.35)', color: '#10b981', fontFamily: 'monospace' }}>上涨 {upPct}%</span>
+            <span style={{ fontSize: 9, padding: '2px 8px', borderRadius: 20, background: 'rgba(244,63,94,0.15)', border: '1px solid rgba(244,63,94,0.35)', color: '#f43f5e', fontFamily: 'monospace' }}>上涨 {upPct}%</span>
           </div>
           <div style={{ height: 120, position: 'relative' }}>
             <ResponsiveContainer width="100%" height="100%">
@@ -177,7 +177,7 @@ export default function Overview() {
               </PieChart>
             </ResponsiveContainer>
             <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', textAlign: 'center' }}>
-              <div style={{ fontSize: 16, fontWeight: 800, color: '#10b981', fontFamily: 'monospace' }}>{upPct}%</div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: '#f43f5e', fontFamily: 'monospace' }}>{upPct}%</div>
               <div style={{ fontSize: 9, color: '#6e7681' }}>上涨占比</div>
             </div>
           </div>
@@ -211,11 +211,11 @@ export default function Overview() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
               <div style={{ padding: '7px 8px', borderRadius: 8, background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)', textAlign: 'center' }}>
                 <div style={{ fontSize: 9, color: '#6e7681', marginBottom: 3 }}>超买 (≥50%)</div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: '#10b981', fontFamily: 'monospace' }}>{data?.temperature?.overbought_ratio}%</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: '#f43f5e', fontFamily: 'monospace' }}>{data?.temperature?.overbought_ratio}%</div>
               </div>
-              <div style={{ padding: '7px 8px', borderRadius: 8, background: 'rgba(244,63,94,0.06)', border: '1px solid rgba(244,63,94,0.2)', textAlign: 'center' }}>
+              <div style={{ padding: '7px 8px', borderRadius: 8, background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)', textAlign: 'center' }}>
                 <div style={{ fontSize: 9, color: '#6e7681', marginBottom: 3 }}>超跌 (&lt;10%)</div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: '#f43f5e', fontFamily: 'monospace' }}>{data?.temperature?.oversold_ratio}%</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: '#10b981', fontFamily: 'monospace' }}>{data?.temperature?.oversold_ratio}%</div>
               </div>
             </div>
           </div>
@@ -442,9 +442,9 @@ export default function Overview() {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
         {/* 净流入 */}
         <div style={{ background: 'linear-gradient(135deg, #0d1117 0%, #0d1a12 100%)', border: '1px solid #1a3024', borderRadius: 16, padding: '20px 22px', position: 'relative', overflow: 'hidden' }}>
-          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: 'linear-gradient(90deg, transparent, #10b98160, transparent)' }} />
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: 'linear-gradient(90deg, transparent, #f43f5e60, transparent)' }} />
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-            <ArrowUpRight size={14} color="#10b981" />
+            <ArrowUpRight size={14} color="#f43f5e" />
             <span style={{ fontSize: 12, fontWeight: 700, color: '#e6edf3' }}>大资金净流入 TOP 5</span>
             <span style={{ fontSize: 10, color: '#4b5563', fontFamily: 'monospace' }}>INFLOW</span>
           </div>
@@ -453,11 +453,16 @@ export default function Overview() {
             {data?.inflow_rank?.length > 0 ? data.inflow_rank.map((item, i) => (
               <div key={i}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <span style={{ fontSize: 11, fontFamily: 'monospace', color: '#e6edf3', fontWeight: 600 }}>{item.sector}</span>
-                  <span style={{ fontSize: 11, fontFamily: 'monospace', color: '#10b981', fontWeight: 700 }}>+{item.flow_value} 亿</span>
+                  <span 
+                    onClick={() => fetchThemeStocks(item.sector, 'desc')}
+                    style={{ fontSize: 11, fontFamily: 'monospace', color: '#e6edf3', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: 2, textDecorationColor: '#f43f5e' }}
+                  >
+                    {item.sector}
+                  </span>
+                  <span style={{ fontSize: 11, fontFamily: 'monospace', color: '#f43f5e', fontWeight: 700 }}>+{item.flow_value} 亿</span>
                 </div>
                 <div style={{ height: 5, borderRadius: 3, background: '#0d2018', overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${(Math.abs(item.flow_value)/maxFlow*100).toFixed(1)}%`, borderRadius: 3, background: 'linear-gradient(90deg, #047857, #10b981)', boxShadow: '0 0 6px rgba(16,185,129,0.3)', transition: 'width 0.8s ease' }} />
+                  <div style={{ height: '100%', width: `${(Math.abs(item.flow_value)/maxFlow*100).toFixed(1)}%`, borderRadius: 3, background: 'linear-gradient(90deg, #9f1239, #f43f5e)', boxShadow: '0 0 6px rgba(244,63,94,0.3)', transition: 'width 0.8s ease' }} />
                 </div>
               </div>
             )) : <div style={{ color: '#4b5563', fontSize: 11, fontFamily: 'monospace', padding: '20px 0', textAlign: 'center' }}>暂无数据</div>}
@@ -466,9 +471,9 @@ export default function Overview() {
 
         {/* 净流出 */}
         <div style={{ background: 'linear-gradient(135deg, #0d1117 0%, #1a0d0d 100%)', border: '1px solid #301a1a', borderRadius: 16, padding: '20px 22px', position: 'relative', overflow: 'hidden' }}>
-          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: 'linear-gradient(90deg, transparent, #f43f5e60, transparent)' }} />
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: 'linear-gradient(90deg, transparent, #10b98160, transparent)' }} />
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-            <ArrowDownRight size={14} color="#f43f5e" />
+            <ArrowDownRight size={14} color="#10b981" />
             <span style={{ fontSize: 12, fontWeight: 700, color: '#e6edf3' }}>大资金净流出 TOP 5</span>
             <span style={{ fontSize: 10, color: '#4b5563', fontFamily: 'monospace' }}>OUTFLOW</span>
           </div>
@@ -477,11 +482,16 @@ export default function Overview() {
             {data?.outflow_rank?.length > 0 ? data.outflow_rank.map((item, i) => (
               <div key={i}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <span style={{ fontSize: 11, fontFamily: 'monospace', color: '#e6edf3', fontWeight: 600 }}>{item.sector}</span>
-                  <span style={{ fontSize: 11, fontFamily: 'monospace', color: '#f43f5e', fontWeight: 700 }}>{item.flow_value} 亿</span>
+                  <span 
+                    onClick={() => fetchThemeStocks(item.sector, 'asc')}
+                    style={{ fontSize: 11, fontFamily: 'monospace', color: '#e6edf3', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: 2, textDecorationColor: '#10b981' }}
+                  >
+                    {item.sector}
+                  </span>
+                  <span style={{ fontSize: 11, fontFamily: 'monospace', color: '#10b981', fontWeight: 700 }}>{item.flow_value} 亿</span>
                 </div>
                 <div style={{ height: 5, borderRadius: 3, background: '#200d0d', overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${(Math.abs(item.flow_value)/maxFlow*100).toFixed(1)}%`, borderRadius: 3, background: 'linear-gradient(90deg, #9f1239, #f43f5e)', boxShadow: '0 0 6px rgba(244,63,94,0.3)', transition: 'width 0.8s ease' }} />
+                  <div style={{ height: '100%', width: `${(Math.abs(item.flow_value)/maxFlow*100).toFixed(1)}%`, borderRadius: 3, background: 'linear-gradient(90deg, #047857, #10b981)', boxShadow: '0 0 6px rgba(16,185,129,0.3)', transition: 'width 0.8s ease' }} />
                 </div>
               </div>
             )) : <div style={{ color: '#4b5563', fontSize: 11, fontFamily: 'monospace', padding: '20px 0', textAlign: 'center' }}>暂无数据</div>}
