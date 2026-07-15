@@ -56,6 +56,7 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   // 手机端操作菜单折叠状态
   const [actionsOpen, setActionsOpen] = useState(false)
+  const [visitorStats, setVisitorStats] = useState(null)
 
   const [toasts, setToasts] = useState([])
   const intervals = useRef({})
@@ -114,6 +115,32 @@ function App() {
   useEffect(() => {
     return () => Object.values(intervals.current).forEach(clearInterval)
   }, [])
+
+  useEffect(() => {
+    let deviceId = localStorage.getItem('device_id')
+    if (!deviceId) {
+      deviceId = 'device_' + Math.random().toString(36).substring(2) + Date.now().toString(36)
+      localStorage.setItem('device_id', deviceId)
+    }
+    
+    const trackVisitor = async () => {
+      try {
+        await fetch('/api/stats/track', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: location.pathname, device_id: deviceId })
+        })
+        const res = await fetch('/api/stats/summary')
+        if (res.ok) {
+          const stats = await res.json()
+          setVisitorStats(stats)
+        }
+      } catch (err) {
+        console.error('Track error:', err)
+      }
+    }
+    trackVisitor()
+  }, [location.pathname])
 
   const handleFetch = useCallback(async () => {
     setActionsOpen(false)
@@ -247,6 +274,18 @@ function App() {
             : <span className="flex items-center text-rose-500 font-mono"><ShieldAlert className="h-3 w-3 mr-1" />OFFLINE</span>}
         </div>
         <div className="font-mono">数据截止: {marketStatus?.db_latest_date || '—'}</div>
+        
+        {visitorStats && (
+          <div className="pt-2 mt-2 border-t border-[#1F2937]/50 flex justify-between items-center text-[10px]">
+            <span className="flex items-center gap-1 text-emerald-400/80 font-mono" title="今日访客(UV) / 今日浏览(PV)">
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              探针: {visitorStats.today_uv} / {visitorStats.today_pv}
+            </span>
+            <span className="opacity-40 font-mono" title="累计访客(UV) / 累计浏览(PV)">
+              总 {visitorStats.total_uv}/{visitorStats.total_pv}
+            </span>
+          </div>
+        )}
       </div>
     </>
   )

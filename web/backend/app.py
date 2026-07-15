@@ -16,7 +16,8 @@ _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
+from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -45,6 +46,8 @@ from services import (
     search_stock,
     diagnose_stock,
     get_style_stocks,
+    record_visitor,
+    get_visitor_stats,
     PROJECT_ROOT
 )
 
@@ -414,6 +417,34 @@ def api_market_style_stocks(date: str = "", style: str = ""):
     if not date or not style:
         return {"error": "Missing parameters"}
     return get_style_stocks(date, style)
+
+class TrackRequest(BaseModel):
+    path: str
+    device_id: str
+
+@app.post("/api/stats/track")
+def track_visitor(req: TrackRequest, request: Request):
+    ip = request.headers.get("CF-Connecting-IP")
+    if not ip:
+        x_forwarded = request.headers.get("X-Forwarded-For")
+        if x_forwarded:
+            ip = x_forwarded.split(",")[0].strip()
+        else:
+            ip = request.client.host if request.client else "unknown"
+            
+    user_agent = request.headers.get("User-Agent", "unknown")
+    try:
+        record_visitor(ip, req.device_id, req.path, user_agent)
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/stats/summary")
+def get_stats():
+    try:
+        return get_visitor_stats()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)

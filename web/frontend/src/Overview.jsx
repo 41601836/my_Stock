@@ -159,7 +159,7 @@ export default function Overview() {
       </div>
 
       {/* 第一行：4 核心指标卡 */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
 
         {/* 赚钱效应 */}
         <div style={card(null, '#f43f5e')}>
@@ -298,7 +298,7 @@ export default function Overview() {
             </div>
           </div>
           
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12 }}>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             {[
               { label: '近20日收益率', val: regimeData.indicators.return_20d + '%', threshold: `Bull >5% / Bear <-3%`, status: regimeData.indicators.return_20d > 5 ? 'good' : regimeData.indicators.return_20d < -3 ? 'bad' : 'normal' },
               { label: '近5日最大回撤', val: regimeData.indicators.mdd_5d + '%', threshold: `Dark < -5%`, status: regimeData.indicators.mdd_5d < -5 ? 'bad' : 'normal' },
@@ -349,7 +349,7 @@ export default function Overview() {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#4b5563', fontSize: 12, fontFamily: 'monospace' }}>暂无风格轮动数据</div>
           )}
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginTop: 16 }}>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
           {[
             { dot: '#c084fc', title: '怎么看 READ', text: '看最近一天的柱子方向与长度。柱朝上越长，当天该风格股涨得越猛。' },
             { dot: '#10b981', title: '怎么买 EXECUTE', text: '💛 橙柱最高 → 优先大单流入高的个股；💜 紫柱最高 → 适当小仓位配短线题材。' },
@@ -377,7 +377,7 @@ export default function Overview() {
           </div>
           <p style={{ fontSize: 11, color: '#6e7681', marginTop: 4 }}>换手率超高 + 主力大单净流入为正 = 游资真实吸筹题材（换手权重 60% + 净买入 40%）</p>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12 }}>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           {data?.hot_money_themes?.length > 0 ? data.hot_money_themes.map((item, i) => {
             const rankColors = ['#f59e0b', '#94a3b8', '#b45309', '#6b7280', '#6b7280']
             const rc = rankColors[i] || '#6b7280'
@@ -439,7 +439,7 @@ export default function Overview() {
       </div>
 
       {/* 第四行：资金流榜 */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* 净流入 */}
         <div style={{ background: 'linear-gradient(135deg, #0d1117 0%, #0d1a12 100%)', border: '1px solid #1a3024', borderRadius: 16, padding: '20px 22px', position: 'relative', overflow: 'hidden' }}>
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: 'linear-gradient(90deg, transparent, #f43f5e60, transparent)' }} />

@@ -93,8 +93,9 @@ export default function WinRateHunter({ upsertToast, removeToast, pollTask }) {
           <div className="relative z-10">
             <div className="flex items-center gap-3 mb-6">
               <span className="text-2xl">🏆</span>
-              <h3 className="text-lg font-bold text-indigo-100 tracking-wide">
-                全局最优进化基因 <span className="text-xs font-normal text-indigo-300/70 ml-2 font-mono">结论产出于 {hunterResult.timestamp}</span>
+              <h3 className="text-lg font-bold text-indigo-100 tracking-wide flex flex-col md:flex-row md:items-center">
+                <span>全局最优进化基因</span>
+                <span className="text-xs font-normal text-indigo-300/70 mt-1 md:mt-0 md:ml-2 font-mono">结论产出于 {hunterResult.timestamp}</span>
               </h3>
             </div>
             
@@ -117,7 +118,7 @@ export default function WinRateHunter({ upsertToast, removeToast, pollTask }) {
               </div>
             </div>
             
-            <div className="mt-5 text-xs text-indigo-200/50 flex gap-4">
+            <div className="mt-5 text-xs text-indigo-200/50 flex flex-wrap md:flex-nowrap items-center gap-3 md:gap-4">
               <span>寻优区间: {hunterResult.start} - {hunterResult.end}</span>
               <span>种群/代数: {hunterResult.population} / {hunterResult.generations}</span>
               <span className="text-emerald-400/70 ml-auto">已自动应用至内核配置 ✓</span>
@@ -199,7 +200,7 @@ export default function WinRateHunter({ upsertToast, removeToast, pollTask }) {
 
       {/* 控制面板 */}
       <div className="bg-[#111827] rounded-2xl border border-[#1F2937] p-6 shadow-xl">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 md:gap-6">
           <div className="space-y-2">
             <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider">起始日期</label>
             <input 

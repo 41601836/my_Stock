@@ -32,7 +32,7 @@ function Logs() {
   return (
     <div className="space-y-6">
       {/* 系统状态横幅 */}
-      <div className="p-5 bg-[#151D30] rounded-2xl border border-[#222F4C] flex items-center justify-between">
+      <div className="p-5 bg-[#151D30] rounded-2xl border border-[#222F4C] flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center space-x-4">
           <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30">
             <CheckCircle className="h-6 w-6 text-emerald-400" />
@@ -42,8 +42,8 @@ function Logs() {
             <p className="text-xs text-gray-400 font-mono mt-0.5">{agentData.status}</p>
           </div>
         </div>
-        <div className="text-right text-xs text-gray-500 font-mono">
-          <div className="flex items-center space-x-1 justify-end">
+        <div className="text-left md:text-right text-xs text-gray-500 font-mono">
+          <div className="flex items-center space-x-1 md:justify-end">
             <Clock className="h-3.5 w-3.5" />
             <span>最后更新: {agentData.last_updated}</span>
           </div>

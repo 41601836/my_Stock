@@ -64,7 +64,7 @@ function Performance() {
 
       {/* 📈 三曲线图表 (Recharts) */}
       <div className="p-6 bg-[#151D30] rounded-2xl border border-[#222F4C] space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
           <h4 className="font-bold text-gray-100 font-sans flex items-center space-x-2">
             <Activity className="h-5 w-5 text-purple-400" />
             <span>累计收益净值三曲线走势比对 (组合 vs 基准 vs 超额 Alpha)</span>

@@ -1,36 +1,59 @@
-# 灵眸分析策略系统 (my_Stock)
+# 鞋底刺刺向心底 | 量化策略控制台 V1.0.0
 
-灵眸自适应量化分析策略系统是一个基于 Tushare 数据源的、具备因子自我进化与市场状态自适应路由的工业级量化策略控制平台。
+🎉 **项目封顶纪念：极客风量化交易与多因子回测闭环系统**
 
-## 系统架构与模块
-*   `web/`：包含基于 FastAPI 构建的后端接口层，以及基于 Vite + React 构建的高颜值量化策略监控控制台。
-*   `agent/`：内置多轨回测引擎（`backtester.py`）、智能推荐决策器（`recommender.py`）以及自适应策略巡航器。
-*   `src/`：包含特征工程因子加工中心（`feature_engineering.py`）与回归训练模型。
-*   `scripts/`：包含自动更新最新日线与筹码数据的增量同步脚本。
+## 项目架构核心
 
-## 📊 数据置信度保证 (Data Confidence)
-为解决数据源（如 Tushare）在增量更新时敏感指标（例如筹码集中度/筹码峰占比 `chips_peak_pct`）缺失或下线导致的零值问题，本系统引入了**高精度本地数据自适应重构技术**。
+本项目是一个集“数据治理、因子挖掘、自动寻优、实盘可视化”于一体的高性能量化投研平台。它的主要架构包含：
 
-1. **计算公式**：
-   通过大样本回归分析，解密并锁定了筹码集中度的重构算法模型：
-   $$chips\_peak\_pct = 100 \times \left(1.0 - \frac{cost\_95pct - cost\_5pct}{cost\_95pct + cost\_5pct}\right)$$
-2. **置信度评定**：
-   在全市场 **5,508 只股票**的对照样本校验中，重构数据与官方数据的 Pearson 相关系数达 **`0.9983`**，决定系数 $R^2$ 达 **`99.67%`**，平均绝对误差仅 **`0.033%`**。
-3. **回归红线拦截**：
-   系统在 [tests/test_chip_concentration.py](file:///Users/lyu/Documents/my_Stock/tests/test_chip_concentration.py) 中内置了红线回归断言（`R² > 0.996`），并已与构建/发布管线绑定，防止算法在未来重构中退化。
+1. **五维智能扫描引擎 (5-Factor Scanner)**
+   - 融合动量、波动率、流动性等五大核心因子。
+   - 提供基于板块/题材的精准过滤与评分排行。
    
-   详细验证推导细节请查阅 [筹码集中度验证归档报告](file:///Users/lyu/Documents/my_Stock/docs/verification/chip_concentration_validation.md)。
+2. **Win Rate Hunter 遗传进化系统**
+   - 采用遗传算法自动回测历史数据，通过群体进化迭代。
+   - 自动寻找“胜率最大化”与“卡玛比率最优化”的参数组合（如选股数量 `top_n` 与权重乘数 `multiplier`），并自适应更新系统配置。
 
-## 🚀 启动与部署
+3. **数据哨兵与异常熔断机制 (Data Governance)**
+   - 每日定时巡检数据断层、停牌异常与涨跌幅不一致性。
+   - 前端悬浮状态指示灯：一键查看系统健康度，自动触发策略熔断，防范“脏数据”导致资金被割。
 
-### 1. 启动后端服务器
+4. **游资与市场情绪全景图 (Market Overview)**
+   - 大资金流入流出实时跟踪，点击板块名称即可下钻查看带头吸金/砸盘的具体个股。
+   - “90后Jack”游资路线图，精准还原游资大佬的历史操盘心法与资金变动轨迹。
+
+5. **极客级炫酷控制台 (Cyberpunk Dashboard)**
+   - 全响应式设计，完美适配 PC 与移动端。
+   - 深度融合毛玻璃、霓虹呼吸灯、全动态图表等次世代 UI 设计语言。
+
+## 快速启动指南
+
+### 启动后端引擎 (FastAPI)
 ```bash
-python3 web/backend/app.py
+cd web/backend
+uvicorn app:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### 2. 启动前端控制台
+### 启动前端控制台 (React + Vite)
 ```bash
 cd web/frontend
 npm run dev
 ```
-打开浏览器访问 `http://localhost:5173`。
+
+### 手动触发胜率猎手 (Win Rate Hunter)
+```bash
+python3 win_rate_hunter.py --start 20250101 --end 20260715 --generations 5 --population 10
+```
+
+### 手动触发数据哨兵巡检
+```bash
+PYTHONPATH=. python3 scripts/data_health_check.py
+```
+
+---
+
+> *"The market is a device for transferring money from the impatient to the patient."*
+> 
+> —— 献给每一位在代码与 K 线中寻找圣杯的宽客。
+
+**V1.0.0 封顶大吉！** 🚀

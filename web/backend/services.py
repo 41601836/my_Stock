@@ -1552,7 +1552,13 @@ def diagnose_stock(ts_code: str, strategy: str):
             "strengths": strengths,
             "weaknesses": weaknesses,
             "strategy": strategy,
-            "active_factors": active_factors
+            "active_factors": active_factors,
+            "raw_metrics": {
+                "winner_rate": float(target_data.get("winner_rate", 0)),
+                "chip_concentration": float(target_data.get("chip_concentration", 0)),
+                "net_mf_amount": float(target_data.get("net_mf_amount", 0)),
+                "turnover_rate_20d": float(target_data.get("turnover_rate_20d", 0))
+            }
         }
     except Exception as e:
         import traceback
@@ -1612,3 +1618,40 @@ def get_style_stocks(short_date: str, style: str):
         return {"error": str(e), "trace": traceback.format_exc()}
     finally:
         conn.close()
+
+import datetime
+def record_visitor(ip: str, device_id: str, path: str, user_agent: str):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    cursor.execute("""
+        INSERT INTO visitor_logs (timestamp, ip, device_id, path, user_agent)
+        VALUES (?, ?, ?, ?, ?)
+    """, (timestamp, ip, device_id, path, user_agent))
+    conn.commit()
+    conn.close()
+
+def get_visitor_stats():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    today = datetime.datetime.now().strftime("%Y-%m-%d")
+    
+    # Today's PV and UV
+    cursor.execute("SELECT COUNT(1), COUNT(DISTINCT device_id) FROM visitor_logs WHERE timestamp LIKE ?", (f"{today}%",))
+    today_row = cursor.fetchone()
+    today_pv = today_row[0] if today_row else 0
+    today_uv = today_row[1] if today_row else 0
+    
+    # Total PV and UV
+    cursor.execute("SELECT COUNT(1), COUNT(DISTINCT device_id) FROM visitor_logs")
+    total_row = cursor.fetchone()
+    total_pv = total_row[0] if total_row else 0
+    total_uv = total_row[1] if total_row else 0
+    
+    conn.close()
+    return {
+        "today_pv": today_pv,
+        "today_uv": today_uv,
+        "total_pv": total_pv,
+        "total_uv": total_uv
+    }

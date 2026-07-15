@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Activity, Search, Shield, ChevronDown, CheckCircle, AlertTriangle, Crosshair, Target } from 'lucide-react'
+import { Activity, Search, Shield, ChevronDown, CheckCircle, AlertTriangle, Crosshair, Target, BarChart3 } from 'lucide-react'
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts'
 
 const Diagnose = () => {
@@ -338,6 +338,40 @@ const Diagnose = () => {
                 )}
               </div>
 
+            </div>
+
+            {/* Core Metrics Summary */}
+            <div className="col-span-1 lg:col-span-3 bg-[#0B1220] border border-[#222F4C] rounded-2xl p-6 mt-2">
+              <h4 className="text-gray-400 font-bold mb-4 flex items-center gap-2 text-sm uppercase tracking-wider">
+                <BarChart3 className="w-4 h-4" />
+                核心指标明细 (Core Metrics Snapshot)
+              </h4>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-[#151D30]/80 rounded-xl p-4 border border-[#1A253D] flex flex-col gap-1">
+                  <span className="text-xs text-gray-500 font-semibold tracking-wide">筹码胜率 (Winner Rate)</span>
+                  <span className="text-xl font-bold font-mono text-emerald-400">
+                    {result.raw_metrics?.winner_rate?.toFixed(2) || '0.00'}%
+                  </span>
+                </div>
+                <div className="bg-[#151D30]/80 rounded-xl p-4 border border-[#1A253D] flex flex-col gap-1">
+                  <span className="text-xs text-gray-500 font-semibold tracking-wide">筹码集中度 (Concentration)</span>
+                  <span className="text-xl font-bold font-mono text-indigo-400">
+                    {result.raw_metrics?.chip_concentration?.toFixed(2) || '0.00'}%
+                  </span>
+                </div>
+                <div className="bg-[#151D30]/80 rounded-xl p-4 border border-[#1A253D] flex flex-col gap-1">
+                  <span className="text-xs text-gray-500 font-semibold tracking-wide">主力净流入 (Net Inflow)</span>
+                  <span className={`text-xl font-bold font-mono ${result.raw_metrics?.net_mf_amount > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
+                    {result.raw_metrics?.net_mf_amount > 0 ? '+' : ''}{(result.raw_metrics?.net_mf_amount / 10000).toFixed(2) || '0.00'}亿
+                  </span>
+                </div>
+                <div className="bg-[#151D30]/80 rounded-xl p-4 border border-[#1A253D] flex flex-col gap-1">
+                  <span className="text-xs text-gray-500 font-semibold tracking-wide">20日换手率 (Turnover 20d)</span>
+                  <span className="text-xl font-bold font-mono text-amber-400">
+                    {result.raw_metrics?.turnover_rate_20d?.toFixed(2) || '0.00'}%
+                  </span>
+                </div>
+              </div>
             </div>
 
           </div>

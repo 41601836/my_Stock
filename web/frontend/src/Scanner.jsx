@@ -116,7 +116,7 @@ function Scanner() {
       </div>
 
       {/* ── 数据血统状态跟踪 (Data Lineage Tracker) */}
-      <div className="grid grid-cols-4 gap-4 p-4 rounded-xl bg-[#151d32] border border-[#1e2a44]">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 rounded-xl bg-[#151d32] border border-[#1e2a44]">
         <div className="flex flex-col gap-1">
           <span className="text-[10px] text-gray-500 font-bold tracking-wider">行情基准日 (Price)</span>
           <span className="text-sm font-mono text-gray-300 flex items-center gap-2">
@@ -230,9 +230,9 @@ function Scanner() {
       </div>
 
       {/* ── 主表格 + 详情面板 */}
-      <div className="flex gap-4">
+      <div className="flex flex-col lg:flex-row gap-4">
         {/* 股票列表 */}
-        <div className={`${selected ? 'w-3/5' : 'w-full'} transition-all duration-300`}>
+        <div className={`${selected ? 'w-full lg:w-3/5' : 'w-full'} transition-all duration-300`}>
           {loading ? (
             <div className="p-16 flex flex-col items-center gap-4 text-gray-500">
               <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-purple-500" />
@@ -311,16 +311,32 @@ function Scanner() {
 
         {/* 详情面板 */}
         {selectedStock && (
-          <div className="w-2/5 space-y-4">
-            <div className="p-5 bg-[#151D30]/90 rounded-2xl border border-purple-500/30 space-y-4">
-              {/* 股票标题 */}
-              <div className="flex items-start justify-between">
-                <div>
-                  <div className="text-lg font-bold text-gray-100">{selectedStock.name}</div>
-                  <div className="text-xs text-gray-400 font-mono">{selectedStock.ts_code} · {selectedStock.industry}</div>
+          <>
+            {/* 移动端遮罩 */}
+            <div 
+              className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden transition-opacity" 
+              onClick={() => setSelected(null)} 
+            />
+            
+            <div className="fixed inset-x-0 bottom-0 z-50 p-5 pb-8 bg-[#0B1220] rounded-t-3xl border-t border-purple-500/30 max-h-[85vh] overflow-y-auto lg:sticky lg:top-0 lg:self-start lg:block lg:w-2/5 lg:bg-transparent lg:border-none lg:p-0 lg:pb-0 lg:rounded-none lg:max-h-[calc(100vh-8rem)] lg:overflow-y-auto lg:overflow-x-hidden space-y-4 shrink-0 shadow-2xl lg:shadow-none">
+              
+              {/* 移动端顶部把手 */}
+              <div className="w-12 h-1.5 bg-gray-600 rounded-full mx-auto mb-4 lg:hidden" />
+
+              <div className="lg:p-5 lg:bg-[#151D30]/90 lg:rounded-2xl lg:border lg:border-purple-500/30 space-y-4">
+                {/* 股票标题 */}
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="text-lg font-bold text-gray-100">{selectedStock.name}</div>
+                    <div className="text-xs text-gray-400 font-mono">{selectedStock.ts_code} · {selectedStock.industry}</div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <BuildGrade score={selectedStock.build_score} />
+                    <button onClick={() => setSelected(null)} className="lg:hidden p-1.5 bg-[#1A253D] rounded-full text-gray-400 hover:text-white transition-colors">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
-                <BuildGrade score={selectedStock.build_score} />
-              </div>
 
               {/* 5维指标详情 */}
               <div className="space-y-3">
@@ -386,6 +402,7 @@ function Scanner() {
               ))}
             </div>
           </div>
+          </>
         )}
       </div>
 

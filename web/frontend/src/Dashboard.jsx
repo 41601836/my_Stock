@@ -63,7 +63,7 @@ function Dashboard({ marketStatus }) {
     <div className="space-y-6">
       {/* 🔮 状态看板 (Market Regime Banner) */}
       <div className={`p-6 rounded-2xl border pulsate transition-all ${regimeInfo.color}`}>
-        <div className="flex items-start justify-between">
+        <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
           <div className="space-y-2">
             <span className="text-xs uppercase font-mono tracking-widest text-gray-400">当前决策路由状态</span>
             <h3 className="text-2xl font-bold flex items-center space-x-2">
@@ -72,7 +72,7 @@ function Dashboard({ marketStatus }) {
             </h3>
             <p className="text-sm opacity-90 leading-relaxed max-w-3xl">{regimeInfo.desc}</p>
           </div>
-          <div className="text-right space-y-1">
+          <div className="text-left md:text-right space-y-1 w-full md:w-auto">
             <span className="text-xs text-gray-400 font-mono">本周路由选用模型</span>
             <div className="text-sm font-mono font-semibold bg-[#0D1220]/60 px-3 py-1 rounded-lg border border-gray-700">
               {marketStatus?.model_used || 'None'}

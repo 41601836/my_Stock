@@ -66,7 +66,7 @@ function JackMode() {
 
       {/* 📈 散户/游资风格模拟曲线 (Recharts) */}
       <div className="p-6 bg-[#151D30]/60 backdrop-blur-md rounded-2xl border border-[#222F4C] space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
           <h4 className="font-bold text-gray-100 font-sans flex items-center space-x-2">
             <Flame className="h-5 w-5 text-purple-400 animate-bounce" />
             <span>散户/游资风格自适应路由累计净值走势 (组合 vs 基准 vs 超额 Alpha)</span>
@@ -137,15 +137,15 @@ function JackMode() {
           </p>
         </div>
         <div className="p-4 bg-[#0F1424] rounded-xl border border-[#222F4C] space-y-2 text-xs">
-          <div className="flex justify-between">
+          <div className="flex flex-col sm:flex-row sm:justify-between gap-1">
             <span className="text-gray-400 font-mono">周绝对胜率:</span>
             <span className="font-bold font-mono text-emerald-400">{metrics.win_rate || '0.0%'}</span>
           </div>
-          <div className="flex justify-between">
+          <div className="flex flex-col sm:flex-row sm:justify-between gap-1">
             <span className="text-gray-400 font-mono">周超额胜率:</span>
             <span className="font-bold font-mono text-purple-400">{metrics.ex_win_rate || '0.0%'}</span>
           </div>
-          <div className="flex justify-between">
+          <div className="flex flex-col sm:flex-row sm:justify-between gap-1">
             <span className="text-gray-400 font-mono">每周全仓换手摩擦:</span>
             <span className="font-bold font-mono text-rose-400">双边 0.30% / 周</span>
           </div>

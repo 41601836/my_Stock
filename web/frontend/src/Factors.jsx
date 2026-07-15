@@ -76,7 +76,7 @@ function Factors() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Range 核心模型 */}
         <div className="p-6 bg-[#151D30] rounded-2xl border border-[#222F4C] space-y-6">
-          <div className="flex items-center justify-between border-b border-[#222F4C]/60 pb-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 border-b border-[#222F4C]/60 pb-4">
             <h4 className="font-bold font-sans flex items-center space-x-2 text-gray-200">
               <BarChart className="h-5 w-5 text-emerald-400" />
               <span>Range 震荡市因子分配权重 (已部署)</span>
@@ -95,7 +95,7 @@ function Factors() {
 
         {/* Bull 专轨模型 */}
         <div className="p-6 bg-[#151D30] rounded-2xl border border-[#222F4C] space-y-6">
-          <div className="flex items-center justify-between border-b border-[#222F4C]/60 pb-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 border-b border-[#222F4C]/60 pb-4">
             <h4 className="font-bold font-sans flex items-center space-x-2 text-gray-200">
               <BarChart className="h-5 w-5 text-indigo-400" />
               <span>Bull 牛市专轨因子分配权重 (已部署)</span>

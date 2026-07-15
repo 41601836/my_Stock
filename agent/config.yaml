@@ -1,7 +1,7 @@
 backtest:
   full_weeks: 208
   quick_weeks: 104
-  top_n_stocks: 18
+  top_n_stocks: 16
   transaction_cost: 0.0015
 factors:
   base_pool:
@@ -39,7 +39,7 @@ special_boost:
   factors:
   - volatility_10d
   - volatility_120d
-  multiplier: 2.92
+  multiplier: 1.32
 validation:
   baseline_end_date: '20241231'
   baseline_start_date: '20200102'
