@@ -17,6 +17,7 @@ if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
 from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -48,10 +49,30 @@ from services import (
     get_style_stocks,
     record_visitor,
     get_visitor_stats,
+    save_scan_history,   # 建仓扫描历史累计层
+    get_scan_history,    # 建仓扫描历史查询层
+    get_timing_alerts,   # 建仓时机预警评分
+    get_portrait_analysis,  # T+1 画像分析路由层
+    get_portrait_position_pick,  # T+1 画像三层漏斗建仓决策
+    clean_nan_inf,
     PROJECT_ROOT
 )
 
-app = FastAPI(title="量化策略控制台 API", description="Antigravity 因子进化与市场自适应控制后台 API", version="1.0.0")
+class SafeJSONResponse(JSONResponse):
+    """
+    全自动安全 JSON 响应器：
+    拦截并递归清洗所有待返回数据中的 NaN, Infinity, -Infinity，
+    避免 FastAPI / Starlette 抛出 JSON non-compliant 错误而导致 HTTP 500。
+    """
+    def render(self, content: any) -> bytes:
+        return super().render(clean_nan_inf(content))
+
+app = FastAPI(
+    title="量化策略控制台 API",
+    description="Antigravity 因子进化与市场自适应控制后台 API",
+    version="1.0.0",
+    default_response_class=SafeJSONResponse
+)
 
 # 配置 CORS 允许跨域
 app.add_middleware(
@@ -62,14 +83,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from fastapi import Request
-from fastapi.responses import JSONResponse
 import logging
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logging.getLogger(__name__).error(f"Unhandled API error at {request.url}: {exc}")
-    return JSONResponse(
+    return SafeJSONResponse(
         status_code=500,
         content={"message": "服务器内部发生未捕获的异常。请检查后台日志。", "detail": str(exc)},
     )
@@ -117,43 +136,87 @@ def api_agent():
     """
     return get_agent_logs()
 
+
+@app.get("/api/portrait/analysis")
+def api_portrait_analysis(days: int = 10):
+    """
+    T+1 上涨画像分析路由层：统计最近 N 个推荐日中，
+    上涨/下跌股票在各因子维度上的差异分布。
+    参数 days: 分析的推荐日天数（默认 10 天）
+    """
+    return get_portrait_analysis(days=days)
+
+
+@app.get("/api/portrait/position-pick")
+def api_portrait_position_pick(top_n: int = 30, strategy: str = "left"):
+    """
+    T+1 画像三层过滤漏斗建仓决策路由层：
+    层一：画像等级 ≥ B（portrait_score >= 60）
+    层二：今日涨幅 <= 5%（避免追高）/ 右侧 <= 9.5%
+    层三：同行业最多1支（仓位分散）
+    最终返回 1-3 支精选建仓股票及漏斗统计。
+    """
+    return get_portrait_position_pick(top_n=max(10, min(top_n, 60)), strategy=strategy)
+
 # 全局异步任务状态表
 task_registry = {}
 
 def is_task_running(task_type=None):
-    """检测当前是否有正在运行的同类型任务或任何后台任务"""
+    """
+    检测当前是否有正在运行的后台任务。
+    - task_type=None：只要有任何任务在运行即返回 True（数据拉取/扫描场景）。
+    - task_type 指定类型：只检测同类型任务是否在运行（回测/猎手可与数据任务并行）。
+    由于数据拉取、因子工程与回测均高度依赖 SQLite 独占写入，
+    因此全局同一时间仅允许一个重度后台任务运行，防止多进程 DB 死锁。
+    """
     for tid, info in task_registry.items():
         if info.get("status") in ["PENDING", "RUNNING"]:
+            # 若指定类型，只拦截同类型任务；否则拦截所有
             if task_type is None or info.get("type") == task_type:
                 return True
     return False
 
 def _run_bg_task(task_id: str, cmd: list, cwd: str, timeout: int = 600):
     """
-    后台线程执行子进程并更新状态
+    后台线程执行子进程并更新状态，支持保存 Process 实例以便人工干预终止
     """
     task_registry[task_id]["status"] = "RUNNING"
     task_registry[task_id]["started_at"] = time.strftime("%H:%M:%S")
+    proc = None
     try:
-        result = subprocess.run(
-            cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout
+        proc = subprocess.Popen(
+            cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
         )
-        task_registry[task_id]["status"] = "DONE"
-        task_registry[task_id]["output"] = result.stdout[-2000:] if result.stdout else ""
-        task_registry[task_id]["error"] = result.stderr[-800:] if result.stderr else ""
-        task_registry[task_id]["returncode"] = result.returncode
+        task_registry[task_id]["process"] = proc
+        stdout, stderr = proc.communicate(timeout=timeout)
+        
+        if proc.returncode == 0:
+            task_registry[task_id]["status"] = "DONE"
+        else:
+            task_registry[task_id]["status"] = "ERROR" if task_registry[task_id]["status"] != "CANCELLED" else "CANCELLED"
+            
+        task_registry[task_id]["output"] = stdout[-2000:] if stdout else ""
+        task_registry[task_id]["error"] = stderr[-800:] if stderr else ""
+        task_registry[task_id]["returncode"] = proc.returncode
     except subprocess.TimeoutExpired:
+        if proc:
+            try:
+                proc.kill()
+            except Exception:
+                pass
         task_registry[task_id]["status"] = "TIMEOUT"
-        task_registry[task_id]["error"] = f"Task timed out after {timeout}s"
+        task_registry[task_id]["error"] = f"任务超时已强行终止 (超时阈值: {timeout}s)"
     except Exception as e:
         task_registry[task_id]["status"] = "ERROR"
         task_registry[task_id]["error"] = str(e)
-    task_registry[task_id]["finished_at"] = time.strftime("%H:%M:%S")
+    finally:
+        task_registry[task_id]["finished_at"] = time.strftime("%H:%M:%S")
+        task_registry[task_id].pop("process", None)
 
 scheduler = BackgroundScheduler()
 
 def _scheduled_fetch():
-    if is_task_running("fetch"):
+    if is_task_running():
         return
     task_id = f"fetch-cron-{uuid.uuid4().hex[:6]}"
     task_registry[task_id] = {"type": "fetch", "status": "PENDING", "started_at": None, "output": "", "error": ""}
@@ -183,10 +246,10 @@ def shutdown_event():
 @app.post("/api/run-fetch")
 def api_run_fetch():
     """
-    启动异步数据拉取任务 (scripts/test_tushare_fetch.py)，超时 900s
+    启动异步数据拉取任务 (scripts/update_daily_data.py)，超时 900s
     """
-    if is_task_running("fetch"):
-        return {"status": "busy", "message": "⚠️ 数据同步拉取任务已在后台执行中，请勿重复点击"}
+    if is_task_running():
+        return {"status": "busy", "message": "⚠️ 系统已有后台数据任务正在执行中，请勿重复发起"}
         
     task_id = f"fetch-{uuid.uuid4().hex[:6]}"
     task_registry[task_id] = {"type": "fetch", "status": "PENDING", "started_at": None, "output": "", "error": ""}
@@ -200,8 +263,8 @@ def api_run_scan():
     """
     启动异步因子有效性扫描 (quick 模式，~3 分钟)，超时 600s
     """
-    if is_task_running("scan"):
-        return {"status": "busy", "message": "⚠️ 因子效能扫描任务已在后台执行中，请勿重复点击"}
+    if is_task_running():
+        return {"status": "busy", "message": "⚠️ 系统已有后台数据任务正在执行中，请勿重复发起"}
         
     task_id = f"scan-{uuid.uuid4().hex[:6]}"
     task_registry[task_id] = {"type": "scan", "status": "PENDING", "started_at": None, "output": "", "error": ""}
@@ -336,14 +399,63 @@ def api_task_status(task_id: str):
     """
     if task_id not in task_registry:
         return {"task_id": task_id, "status": "NOT_FOUND"}
-    return {"task_id": task_id, **task_registry[task_id]}
+    info = dict(task_registry[task_id])
+    info.pop("process", None)
+    return {"task_id": task_id, **info}
+
+@app.post("/api/task-clear")
+def api_task_clear():
+    """
+    强制重置与终止所有正在运行或卡顿的后台任务
+    """
+    cleared = []
+    for tid, info in list(task_registry.items()):
+        if info.get("status") in ["PENDING", "RUNNING"]:
+            proc = info.get("process")
+            if proc:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+            info["status"] = "CANCELLED"
+            info["error"] = "任务已被手动强行重置"
+            cleared.append(tid)
+    return {"status": "success", "message": f"成功解锁并清理 {len(cleared)} 个卡顿任务", "cleared": cleared}
+
+@app.post("/api/task-cancel/{task_id}")
+def api_task_cancel(task_id: str):
+    """
+    取消并强行终止特定的异步任务
+    """
+    if task_id not in task_registry:
+        return {"status": "error", "message": f"任务 {task_id} 不存在"}
+    
+    info = task_registry[task_id]
+    proc = info.get("process")
+    if proc:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+    info["status"] = "CANCELLED"
+    info["error"] = "任务已被手动取消"
+    return {"status": "success", "message": f"任务 {task_id} 已强行终止"}
 
 @app.get("/api/scan-opportunities")
 def api_scan_opportunities():
     """
-    实时建仓机会扫描：基于最新截面因子+笹码+大资金流入，筛选可建仓股票
+    实时建仓机会扫描：基于最新截面因子+筹码+大资金流入，筛选可建仓股票。
+    每次调用结果自动写入 scan_history 表（同日同股去重）。
     """
-    return get_build_position_opportunities()
+    result = get_build_position_opportunities()
+    # 自动累计写历史（异常不影响主流程）
+    try:
+        written = save_scan_history(result)
+        if result.get("meta") is not None:
+            result["meta"]["history_written"] = written
+    except Exception as _e:
+        pass
+    return result
 
 @app.get("/api/market/sector-opportunities")
 def api_sector_opportunities(sector: str = ""):
@@ -353,6 +465,62 @@ def api_sector_opportunities(sector: str = ""):
     if not sector:
         return {"error": "Sector parameter is required", "stocks": []}
     return get_build_position_opportunities(sector_filter=sector, top_n=10)
+
+
+@app.get("/api/scan-history")
+def api_scan_history(
+    days: int = 30,
+    top_n_per_day: int = 0,
+    min_appear: int = 1
+):
+    """
+    查询建仓扫描历史累计数据。
+
+    参数：
+    - days:          查询最近 N 个自然日（默认 30）
+    - top_n_per_day: 只看每日 Top-N 席位（0 = 不限）
+    - min_appear:    频率排行最小上榜次数门槛（默认 1）
+
+    返回：
+    - summary: 上榜频率排行（出现次数+平均排名+平均因子分）
+    - daily:   按日期分组的每日原始记录
+    - streak:  当前连续上榜天数 >= 2 的股票排行
+    - meta:    统计元信息（总记录数、唯一股票数等）
+    """
+    return get_scan_history(
+        days=max(1, min(days, 365)),
+        top_n_per_day=top_n_per_day,
+        min_appear=min_appear
+    )
+
+
+@app.get("/api/scan-history/stock/{ts_code}")
+def api_scan_history_stock(ts_code: str, days: int = 90):
+    """
+    查询某只股票近 N 天内的历史上榜记录（用于个股历史追踪）。
+    返回：该股每次上榜的日期、排名、评分等完整信息。
+    """
+    return get_scan_history(
+        days=max(1, min(days, 365)),
+        ts_code=ts_code
+    )
+
+
+@app.get("/api/scan-history/timing")
+def api_timing_alerts(lookback_days: int = 20):
+    """
+    建仓时机预警：基于今日在榜股票，计算多维信号综合评分。
+
+    评分维度：初次入榜、排名跃升、连续第3天、二次入榜、
+              因子极强、市场状态匹配（Bear/Dark加分）、
+              信号过热/追涨风险（扣分）。
+
+    返回三级预警：
+      golden（≥60分）= 最佳建仓窗口
+      watch （35-59）= 跟踪观察期
+      normal（<35）  = 普通信号
+    """
+    return get_timing_alerts(lookback_days=max(5, min(lookback_days, 60)))
 
 @app.get("/api/tracker/attribution")
 def api_tracker_attribution():

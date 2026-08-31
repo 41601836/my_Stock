@@ -29,6 +29,79 @@ LOGS_PATH        = PATHS.logs.agent_auto_run
 CRUISE_REPORT_PATH = PATHS.reports.agent_cruise
 
 
+def get_db_connection(db_path=DB_PATH, timeout=30.0):
+    """
+    统一安全的 SQLite 数据库连接器：
+    1. 默认设置 30s 超时时间，防止写读等待引发 Database Locked 异常。
+    2. 开启 WAL (Write-Ahead Logging) 模式与 30s busy_timeout 提升高并发吞吐能力。
+    """
+    conn = sqlite3.connect(db_path, timeout=timeout)
+    try:
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA busy_timeout=30000;")
+    except Exception:
+        pass
+    return conn
+
+import math
+
+def clean_nan_inf(obj, default=0.0):
+    """
+    递归清理数据结构中的 NaN, Infinity, -Infinity，确保合规可被标准 JSON 序列化。
+    """
+    if isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return default
+        return obj
+    elif isinstance(obj, dict):
+        return {k: clean_nan_inf(v, default) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [clean_nan_inf(v, default) for v in obj]
+    elif isinstance(obj, tuple):
+        return tuple(clean_nan_inf(v, default) for v in obj)
+    elif isinstance(obj, np.generic):
+        val = obj.item()
+        if isinstance(val, float) and (math.isnan(val) or math.isinf(val)):
+            return default
+        return val
+    return obj
+
+def _get_factor_date(conn) -> str:
+    """
+    智能选择因子基准日期：
+    - 盘后且 factor_values 已更新至最新行情日：使用 T-0（今日最新因子）
+    - 盘中（16:00 前）或因子未更新至今日：使用 T-1（昨日稳定因子）
+
+    规则：
+      1. 取 factor_values 最新两个日期 fac_latest, fac_prev
+      2. 取 daily_prices 最新日期 price_latest
+      3. 若 fac_latest == price_latest → 因子已更新，直接用 T-0
+      4. 否则降级用 fac_prev（T-1）
+    """
+    import datetime
+    fac_dates = pd.read_sql(
+        "SELECT DISTINCT trade_date FROM factor_values ORDER BY trade_date DESC LIMIT 2",
+        conn
+    )["trade_date"].tolist()
+    if not fac_dates:
+        return ""
+    fac_latest = fac_dates[0]
+    fac_prev   = fac_dates[1] if len(fac_dates) >= 2 else fac_dates[0]
+
+    try:
+        price_latest = pd.read_sql(
+            "SELECT MAX(trade_date) as d FROM daily_prices", conn
+        ).iloc[0, 0]
+    except Exception:
+        price_latest = ""
+
+    # 若因子已更新到行情最新日期，直接用最新；否则用前一天
+    if fac_latest and price_latest and fac_latest >= price_latest:
+        return fac_latest   # T-0：盘后因子已稳定
+    else:
+        return fac_prev     # T-1：盘中或因子未更新，使用昨日稳定值
+
+
 def _get_restricted_stocks(conn):
     """获取限制名单：ST股、次新股/新股（上市不满1年）"""
     import datetime
@@ -103,8 +176,7 @@ def get_market_status():
     
     try:
         if os.path.exists(DB_PATH):
-            conn = sqlite3.connect(DB_PATH, timeout=10)
-            conn.execute("PRAGMA journal_mode=WAL;")
+            conn = get_db_connection(DB_PATH)
             cursor = conn.cursor()
             cursor.execute("SELECT MAX(trade_date) FROM daily_prices")
             d = cursor.fetchone()[0]
@@ -176,18 +248,16 @@ def get_regime_dashboard():
         regime_history: 最近 8 周的路由状态历史
     """
     try:
-        conn = sqlite3.connect(DB_PATH, timeout=10)
-        conn.execute("PRAGMA journal_mode=WAL;")
+        conn = get_db_connection(DB_PATH)
         
-        # 取最近 30 个交易日的等权基准数据
+        # 取最近 60 个交易日的全市场每日等权收益率，构建金融严谨的基准净值 (Benchmark NAV)
         df_bench = pd.read_sql(
             "SELECT trade_date, "
             "  AVG(pct_chg) as pct_chg, "
-            "  AVG(close) as close, "
             "  SUM(CASE WHEN pct_chg > 0 THEN 1 ELSE 0 END) * 1.0 / COUNT(*) as up_ratio "
             "FROM daily_prices "
             "GROUP BY trade_date "
-            "ORDER BY trade_date DESC LIMIT 30",
+            "ORDER BY trade_date DESC LIMIT 60",
             conn
         )
         conn.close()
@@ -197,12 +267,16 @@ def get_regime_dashboard():
         
         df_bench = df_bench.sort_values("trade_date").reset_index(drop=True)
         
-        # 计算指标
-        df_bench["return_20d"] = df_bench["close"].pct_change(20)
+        # 计算全市场复利累计净值 nav
+        df_bench["nav"] = (1.0 + df_bench["pct_chg"] / 100.0).cumprod()
+        
+        # 精确计算 20日收益率、5日收益率、20日波动率与 5日最大回撤 (标准小数比例 0-1)
+        df_bench["return_20d"] = df_bench["nav"] / df_bench["nav"].shift(20) - 1.0
+        df_bench["return_5d"] = df_bench["nav"] / df_bench["nav"].shift(5) - 1.0
         df_bench["vol_20d"] = df_bench["pct_chg"].rolling(20).std()
-        roll_max = df_bench["close"].rolling(5).max()
-        df_bench["mdd_5d"] = ((df_bench["close"] - roll_max) / roll_max).rolling(5).min()
-        df_bench["return_5d"] = df_bench["close"].pct_change(5)
+        
+        roll_max_5d = df_bench["nav"].rolling(5).max()
+        df_bench["mdd_5d"] = (df_bench["nav"] - roll_max_5d) / roll_max_5d
         
         # 获取历史波动率分位数（用全样本）
         valid_vol = df_bench["vol_20d"].dropna()
@@ -216,7 +290,7 @@ def get_regime_dashboard():
         up_r  = float(last["up_ratio"]) if not pd.isna(last["up_ratio"]) else 0.5
         ret5w = float(last["return_5d"]) if not pd.isna(last["return_5d"]) else 0.0
         
-        # 判定当前触发的条件
+        # 判定当前触发的条件 (统一采用标准小数比例比对: -0.045 即 -4.5%, -0.05 即 -5%)
         triggers = []
         if ret5w < -0.045:
             triggers.append({"name": "周收益率触发", "value": f"{ret5w:.2%}", "threshold": "< -4.5%", "color": "red"})
@@ -282,10 +356,10 @@ def get_regime_dashboard():
 
 def get_theme_stocks(sector_name: str, limit: int = 10, sort_order: str = "DESC"):
     """
-    获取某个游资题材（如 "互联网"）下的具体活跃个股列表
+    获取某个游资题材（如 "互联网"）下的具体活跃个股列表，包含板块和近5日涨幅
     """
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = get_db_connection(DB_PATH)
         cursor = conn.cursor()
         cursor.execute("SELECT MAX(trade_date) FROM daily_prices")
         row = cursor.fetchone()
@@ -296,7 +370,7 @@ def get_theme_stocks(sector_name: str, limit: int = 10, sort_order: str = "DESC"
             
         order_clause = "DESC" if sort_order.upper() == "DESC" else "ASC"
         df = pd.read_sql(
-            f"SELECT s.ts_code, s.name, dp.pct_chg, db.turnover_rate, mf.net_mf_amount "
+            f"SELECT s.ts_code, s.name, s.market, s.industry, dp.pct_chg, db.turnover_rate, mf.net_mf_amount "
             f"FROM daily_basic db "
             f"LEFT JOIN stock_list s ON db.ts_code = s.ts_code "
             f"LEFT JOIN moneyflow mf ON db.ts_code = mf.ts_code AND mf.trade_date = db.trade_date "
@@ -305,23 +379,55 @@ def get_theme_stocks(sector_name: str, limit: int = 10, sort_order: str = "DESC"
             f"ORDER BY mf.net_mf_amount {order_clause} LIMIT ?",
             conn, params=(latest_date, f"%{sector_name}%", limit)
         )
-        conn.close()
         
         if df.empty:
+            conn.close()
             return {"stocks": []}
+        
+        # 批量查询每支股票近5日涨幅（先查出5个日期，再拼参数，避免嵌套子查询绑定错位）
+        codes = tuple(df["ts_code"].tolist())
+        cursor = conn.cursor()
+        cursor.execute("SELECT DISTINCT trade_date FROM daily_prices ORDER BY trade_date DESC LIMIT 5")
+        recent_5_dates = [r[0] for r in cursor.fetchall()]
+        
+        code_ph = ",".join(["?" for _ in codes])
+        date_ph = ",".join(["?" for _ in recent_5_dates])
+        df_5d = pd.read_sql(
+            f"SELECT ts_code, pct_chg FROM daily_prices "
+            f"WHERE ts_code IN ({code_ph}) AND trade_date IN ({date_ph}) "
+            f"ORDER BY ts_code, trade_date",
+            conn, params=list(codes) + recent_5_dates
+        )
+        conn.close()
+        
+        # 计算近5日累计涨幅
+        pct5d_map = {}
+        for code, grp in df_5d.groupby("ts_code"):
+            cum = 1.0
+            for v in grp["pct_chg"].fillna(0):
+                cum *= (1 + v / 100)
+            pct5d_map[code] = round((cum - 1) * 100, 2)
             
         stocks = []
         for _, r in df.iterrows():
+            code = r["ts_code"]
+            # industry 格式: "科创板 | 电气设备" 或 "电气设备"，取最后一段作为精简行业名
+            raw_industry = str(r["industry"]) if not pd.isna(r["industry"]) else ""
+            industry_short = raw_industry.split(" | ")[-1] if raw_industry else "--"
             stocks.append({
-                "ts_code": r["ts_code"],
+                "ts_code": code,
                 "name": r["name"],
+                "market": r["market"] if r["market"] else "--",
+                "industry": industry_short,
                 "pct_chg": round(float(r["pct_chg"]), 2) if not pd.isna(r["pct_chg"]) else 0.0,
+                "pct_chg_5d": pct5d_map.get(code, 0.0),
                 "turnover_rate": round(float(r["turnover_rate"]), 2) if not pd.isna(r["turnover_rate"]) else 0.0,
                 "net_inflow": round(float(r["net_mf_amount"]) / 1e4, 2) if not pd.isna(r["net_mf_amount"]) else 0.0,
             })
         return {"sector": sector_name, "date": str(latest_date), "stocks": stocks}
     except Exception as e:
         return {"error": str(e)}
+
 
 
 # ─────────────────────────────────────────────────────────
@@ -368,13 +474,17 @@ def get_deployed_factors():
 # 3. 今日推荐股票 Top 10
 # ─────────────────────────────────────────────────────────
 def get_today_portfolio():
-    """今日推荐股票 Top 10，使用 daily_prices 关联价格"""
-    conn = sqlite3.connect(DB_PATH)
+    # 导入画像路由层（延迟导入，避免循环依赖）
     try:
-        # 最新因子截止日期
-        latest_date = pd.read_sql(
-            "SELECT MAX(trade_date) FROM factor_values", conn
-        ).iloc[0, 0]
+        from portrait_router import apply_portrait_filter, PORTRAIT_CONFIG
+        _portrait_enabled = True
+    except ImportError:
+        _portrait_enabled = False
+    """今日推荐股票 Top 10，使用 daily_prices 关联价格"""
+    conn = get_db_connection(DB_PATH)
+    try:
+        # 智能选择因子日期：盘后用T-0（今日最新），盘中用T-1（昨日稳定）
+        latest_date = _get_factor_date(conn)
         if not latest_date:
             return []
 
@@ -424,8 +534,27 @@ def get_today_portfolio():
         except:
             top_n = 10
 
+        # ── 画像路由层：扩大候选池3倍，保证过滤后仍有足够补充 ────────────────
+        expand_ratio = PORTRAIT_CONFIG.get("expand_ratio", 3) if _portrait_enabled else 1
+        candidate_n  = top_n * expand_ratio
+
         # 根据配置选取 Top N（用原始 composite_score 排序确保与回测一致，展示 score_norm）
-        df_top = df_fac.sort_values("composite_score", ascending=False).head(top_n).copy()
+        df_top = df_fac.sort_values("composite_score", ascending=False).head(candidate_n).copy()
+
+        # ── 调用画像过滤层：剔除画像不符的股票（portrait_score < 40）─────────
+        if _portrait_enabled:
+            try:
+                df_top = apply_portrait_filter(
+                    df_top     = df_top,
+                    df_fv      = df_fac,
+                    conn       = conn,   # 传入连接，用于查询 stock_cyq_perf 筹码数据
+                    filter_mode= True,
+                )
+            except Exception as _pe:
+                print(f"⚠️ [PortraitRouter] 画像路由层异常，降级跳过: {_pe}")
+
+        # 截取最终 top_n，重新编号
+        df_top = df_top.head(top_n).copy()
         df_top["__rank"] = range(1, len(df_top) + 1)
 
         codes = df_top["stock_code"].tolist()
@@ -460,19 +589,24 @@ def get_today_portfolio():
             daily_change = pct / 100.0
             close_price  = max(float(row["close"]), 0.01)
             result.append({
-                "rank":           int(row["__rank"]),
-                "stock_code":     str(row["stock_code"]),
-                "name":           str(row["name"]),
-                "industry":       str(row["industry"]),
+                "rank":             int(row["__rank"]),
+                "stock_code":       str(row["stock_code"]),
+                "name":             str(row["name"]),
+                "industry":         str(row["industry"]),
                 # score_norm 归一化到 [0,1]，便于前端直觉展示
-                "score":          round(float(row.get("score_norm", 0.0)), 4),
-                "score_raw":      round(float(row["composite_score"]), 5),
-                "close_price":    round(close_price, 2),
-                "daily_change":   round(daily_change, 4),
-                "return_5d":      round(float(row.get("return_5d", 0.0)), 4),
-                "return_10d":     round(float(row.get("return_10d", 0.0)), 4),
-                "return_20d":     round(float(row.get("return_20d", 0.0)), 4),
-                "position_profit":round(close_price * 1000 * daily_change, 2),
+                "score":            round(float(row.get("score_norm", 0.0)), 4),
+                "score_raw":        round(float(row["composite_score"]), 5),
+                "close_price":      round(close_price, 2),
+                "daily_change":     round(daily_change, 4),
+                "return_5d":        round(float(row.get("return_5d", 0.0)), 4),
+                "return_10d":       round(float(row.get("return_10d", 0.0)), 4),
+                "return_20d":       round(float(row.get("return_20d", 0.0)), 4),
+                "position_profit":  round(close_price * 1000 * daily_change, 2),
+                # ── 画像路由层字段 ──────────────────────────────────────────
+                "portrait_score":   round(float(row.get("portrait_score", 0.0)), 1),
+                "portrait_grade":   str(row.get("portrait_grade", "—")),
+                "portrait_label":   str(row.get("portrait_label", "—")),
+                "portrait_details": row.get("portrait_details", {}),
             })
         # 进行 MVO 二次规划优化以分配各股票建议持仓比例
         try:
@@ -745,6 +879,65 @@ def get_jack_performance_data():
 
     return {"chart_data": chart_data, "metrics": metrics}
 
+def _save_and_calc_recommendation_stats(df_top, latest_date):
+    """
+    保存每日推荐到 CSV 并计算统计数据（连续推荐天数、总次数、是否进过前三）
+    """
+    import os
+    archive_dir = os.path.join(PROJECT_ROOT, "archives")
+    os.makedirs(archive_dir, exist_ok=True)
+    history_csv = os.path.join(archive_dir, "recommended_history.csv")
+    
+    # 1. 准备今日数据
+    df_today = df_top.copy()
+    df_today["date"] = str(latest_date)
+    cols_to_save = ["date", "ts_code", "name", "industry", "build_score", "__rank"]
+    # 确保字段存在
+    for c in cols_to_save:
+        if c not in df_today.columns:
+            df_today[c] = None
+    df_today = df_today[cols_to_save]
+    
+    # 2. 读取历史数据并更新
+    if os.path.exists(history_csv):
+        df_hist = pd.read_csv(history_csv, dtype={"date": str, "ts_code": str})
+        # 移除历史中与今日同一天的数据（防止同一天重复写入）
+        df_hist = df_hist[df_hist["date"] != str(latest_date)]
+        df_hist = pd.concat([df_hist, df_today], ignore_index=True)
+    else:
+        df_hist = df_today
+        
+    # 保存回 CSV
+    df_hist.to_csv(history_csv, index=False)
+    
+    # 3. 计算统计数据
+    stats_map = {}
+    all_dates = sorted(df_hist["date"].unique())
+    date_to_idx = {d: i for i, d in enumerate(all_dates)}
+    today_idx = date_to_idx.get(str(latest_date), -1)
+    
+    for ts_code, group in df_hist.groupby("ts_code"):
+        total_count = len(group)
+        ever_top_3 = bool((group["__rank"] <= 3).any())
+        
+        group_dates = sorted(group["date"].unique())
+        consecutive_days = 0
+        curr_idx = today_idx
+        for d in reversed(group_dates):
+            if date_to_idx[d] == curr_idx:
+                consecutive_days += 1
+                curr_idx -= 1
+            else:
+                break
+                
+        stats_map[ts_code] = {
+            "total_recommends": total_count,
+            "consecutive_days": consecutive_days,
+            "ever_top_3": ever_top_3
+        }
+        
+    return stats_map
+
 
 # ─────────────────────────────────────────────────────────
 # 7. 建仓机会扫描（真实数据多维度打分）
@@ -754,15 +947,15 @@ def get_build_position_opportunities(sector_filter=None, top_n=20):
     基于最新截面真实数据，多维度融合选出"可建仓"股票。
     5维信号：因子综合打分 + 筹码控盘度 + 大资金净流入 + 涨幅过滤 + 换手率合理性
     """
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection(DB_PATH)
     try:
-        latest_fac = pd.read_sql("SELECT MAX(trade_date) FROM factor_values", conn).iloc[0,0]
+        # 智能选择因子日期：盘后用T-0（今日最新），盘中用T-1（昨日稳定）
+        latest_fac = _get_factor_date(conn)
+        if not latest_fac:
+            return {"stocks": [], "meta": {"error": "无因子数据"}}
         latest_cyq = pd.read_sql("SELECT MAX(trade_date) FROM stock_cyq_perf", conn).iloc[0,0]
         latest_mf  = pd.read_sql("SELECT MAX(trade_date) FROM moneyflow", conn).iloc[0,0]
         latest_pr  = pd.read_sql("SELECT MAX(trade_date) FROM daily_prices", conn).iloc[0,0]
-
-        if not latest_fac:
-            return {"stocks": [], "meta": {"error": "无因子数据"}}
 
         # 1. 因子横截面打分
         df_fac = pd.read_sql(
@@ -829,12 +1022,12 @@ def get_build_position_opportunities(sector_filter=None, top_n=20):
         df["name"]     = df["name"].fillna("未知")
         df["industry"] = df["market"].fillna("未知") + " | " + df["industry"].fillna("未分类")
 
-        # 综合建仓评分
+        # 综合建仓评分（factor_score_norm 权重提升至 0.50，更忠实反映策略因子）
         df["build_score"] = (
-            df["factor_score_norm"] * 0.35 +
-            df["winner_rate_norm"]  * 0.25 +
-            df["inflow_norm"]       * 0.25 +
-            (1 - df["pct_chg"].rank(pct=True)) * 0.15
+            df["factor_score_norm"] * 0.50 +
+            df["winner_rate_norm"]  * 0.20 +
+            df["inflow_norm"]       * 0.20 +
+            (1 - df["pct_chg"].rank(pct=True)) * 0.10
         )
 
         # 过滤条件
@@ -870,22 +1063,39 @@ def get_build_position_opportunities(sector_filter=None, top_n=20):
                 reasons.append("💎 筹码高度集中")
             return " | ".join(reasons) if reasons else "综合因子评分靠前"
 
+        # 计算统计数据并保存
+        try:
+            stats_map = _save_and_calc_recommendation_stats(df_top, latest_pr)
+        except Exception as e:
+            print(f"⚠️ [Stats Error] {e}")
+            stats_map = {}
+
         stocks = []
         for _, row in df_top.iterrows():
+            ts_code = str(row["ts_code"])
+            stats = stats_map.get(ts_code, {
+                "total_recommends": 1,
+                "consecutive_days": 1,
+                "ever_top_3": int(row["__rank"]) <= 3
+            })
+            
             stocks.append({
                 "rank":           int(row["__rank"]),
-                "ts_code":        str(row["ts_code"]),
+                "ts_code":        ts_code,
                 "name":           str(row["name"]),
                 "industry":       str(row["industry"]),
                 "close":          round(safe_float(row.get("close")), 2),
                 "pct_chg":        round(safe_float(row.get("pct_chg")), 2),
                 "build_score":    round(safe_float(row.get("build_score")) * 100, 1),
+                # 纯因子分：直接展示五维策略横截面得分，不混入筹码/资金权重
                 "factor_score":   round(safe_float(row.get("factor_score_norm")) * 100, 1),
+                "factor_score_pure": round(safe_float(row.get("factor_score_norm")) * 100, 1),
                 "winner_rate":    round(safe_float(row.get("winner_rate")), 1),
                 "chips_peak_pct": round(safe_float(row.get("chips_peak_pct")), 1),
                 "big_net_inflow": round(safe_float(row.get("big_net_inflow")) / 1e4, 2),
                 "turnover_rate":  round(safe_float(row.get("turnover_rate_20d")), 2),
                 "reason":         build_reason(row),
+                "stats":          stats,
             })
 
         # 进行 MVO 二次规划优化以分配各股票建议持仓比例
@@ -1112,10 +1322,14 @@ def get_market_overview_data():
         down_count = row_adv_dec[1] if row_adv_dec else 0
         flat_count = row_adv_dec[2] if row_adv_dec else 0
         
-        # 2. 筹码大盘温度截面数据 (获利中位数与偏离度)
+        # 2. 筹码大盘温度截面数据 (寻找小于等于 latest_date 的最新可用 CYQ 筹码日期)
+        cursor.execute("SELECT MAX(trade_date) FROM stock_cyq_perf WHERE trade_date <= ?", (latest_date,))
+        cyq_row = cursor.fetchone()
+        cyq_date = cyq_row[0] if cyq_row and cyq_row[0] else latest_date
+        
         df_cyq = pd.read_sql(
             "SELECT winner_rate FROM stock_cyq_perf WHERE trade_date = ?",
-            conn, params=(latest_date,)
+            conn, params=(cyq_date,)
         )
         if not df_cyq.empty:
             median_winner = float(df_cyq["winner_rate"].median())
@@ -1139,8 +1353,8 @@ def get_market_overview_data():
             df_mf["sector"] = df_mf["industry"].apply(lambda x: x.split(" | ")[1] if " | " in x else x)
             df_sector_flow = df_mf.groupby("sector")["total_inflow"].sum().reset_index()
             
-            top_inflow = df_sector_flow.nlargest(5, "total_inflow").to_dict(orient="records")
-            top_outflow = df_sector_flow.nsmallest(5, "total_inflow").to_dict(orient="records")
+            top_inflow = df_sector_flow.nlargest(10, "total_inflow").to_dict(orient="records")
+            top_outflow = df_sector_flow.nsmallest(10, "total_inflow").to_dict(orient="records")
             
             # 格式化单位：万元转换为亿元，保留 2 位小数
             for item in top_inflow:
@@ -1187,12 +1401,15 @@ def get_market_overview_data():
                         "大单大市风格 (Inflow)": round(float(ret_inflow), 2) if not pd.isna(ret_inflow) else None
                     })
         
-        # 4.5. 游资热点题材排行榜 (Hot Money Sector Rank) + 连续上榜天数 (Streak Days)
-        df_hm = pd.read_sql(
-            "SELECT s.industry, db.turnover_rate, mf.net_mf_amount FROM daily_basic db "
+        # 4.5. 三大势力题材排行榜 (游资、机构、主力) + 连续上榜天数 (Streak Days)
+        # 获取当天个股的基础信息、资金流和最新可用筹码
+        df_today = pd.read_sql(
+            "SELECT s.industry, db.turnover_rate, mf.net_mf_amount, cyq.chips_peak_pct, dp.amount FROM daily_basic db "
             "LEFT JOIN stock_list s ON db.ts_code = s.ts_code "
             "LEFT JOIN moneyflow mf ON db.ts_code = mf.ts_code AND mf.trade_date = db.trade_date "
-            "WHERE db.trade_date = ? AND s.industry IS NOT NULL", conn, params=(latest_date,)
+            "LEFT JOIN stock_cyq_perf cyq ON db.ts_code = cyq.ts_code AND cyq.trade_date = ? "
+            "LEFT JOIN daily_prices dp ON db.ts_code = dp.ts_code AND dp.trade_date = db.trade_date "
+            "WHERE db.trade_date = ? AND s.industry IS NOT NULL", conn, params=(cyq_date, latest_date)
         )
         
         # 获取最近 10 个交易日列表，用于计算连续上榜天数
@@ -1201,111 +1418,140 @@ def get_market_overview_data():
         )
         recent_dates = [r[0] for r in cursor.fetchall()]
         
-        def _hot_sectors_on_date(c, td, top_n=8):
-            """计算某日游资热点题材集合（宽松 top_n 以保证连续性分析准确）"""
-            try:
-                df = pd.read_sql(
-                    "SELECT s.industry, db.turnover_rate, mf.net_mf_amount FROM daily_basic db "
-                    "LEFT JOIN stock_list s ON db.ts_code = s.ts_code "
-                    "LEFT JOIN moneyflow mf ON db.ts_code = mf.ts_code AND mf.trade_date = db.trade_date "
-                    "WHERE db.trade_date = ? AND s.industry IS NOT NULL", c, params=(td,)
-                )
-                if df.empty: return set()
-                df["sector"] = df["industry"].apply(lambda x: x.split(" | ")[1] if " | " in x else x)
-                agg = df.groupby("sector").agg({"turnover_rate": "mean", "net_mf_amount": "sum"}).reset_index()
-                agg = agg[agg["net_mf_amount"] > 0]
-                if agg.empty: return set()
-                t_mx = agg["turnover_rate"].max() or 1.0
-                m_mx = agg["net_mf_amount"].max() or 1.0
-                agg["hs"] = agg["turnover_rate"] / t_mx * 60 + agg["net_mf_amount"] / m_mx * 40
-                return set(agg.nlargest(top_n, "hs")["sector"].tolist())
-            except Exception:
-                return set()
-        
         # 预计算最近 9 日（不含今日）每日热点题材集合
-        # 用单次批量 SQL 代替逐日 N 次查询，大幅提升性能
         recent_9_dates = recent_dates[1:]
-        hist_hot = {}
+        hist_hot, hist_inst, hist_main = {}, {}, {}
         if recent_9_dates:
             placeholders = ",".join(["?"]*len(recent_9_dates))
             df_hist = pd.read_sql(
-                f"SELECT s.industry, db.turnover_rate, mf.net_mf_amount, db.trade_date "
+                f"SELECT s.industry, db.turnover_rate, mf.net_mf_amount, cyq.chips_peak_pct, db.trade_date "
                 f"FROM daily_basic db "
                 f"LEFT JOIN stock_list s ON db.ts_code = s.ts_code "
                 f"LEFT JOIN moneyflow mf ON db.ts_code = mf.ts_code AND mf.trade_date = db.trade_date "
+                f"LEFT JOIN stock_cyq_perf cyq ON db.ts_code = cyq.ts_code AND cyq.trade_date = db.trade_date "
                 f"WHERE db.trade_date IN ({placeholders}) AND s.industry IS NOT NULL",
                 conn, params=recent_9_dates
             )
             if not df_hist.empty:
                 df_hist["sector"] = df_hist["industry"].apply(lambda x: x.split(" | ")[1] if " | " in x else x)
                 for td, grp in df_hist.groupby("trade_date"):
-                    agg = grp.groupby("sector").agg({"turnover_rate": "mean", "net_mf_amount": "sum"}).reset_index()
-                    agg = agg[agg["net_mf_amount"] > 0]
-                    if agg.empty:
+                    agg = grp.groupby("sector").agg({
+                        "turnover_rate": "mean", "net_mf_amount": "sum", "chips_peak_pct": "mean"
+                    }).reset_index()
+                    
+                    # 游资 (换手+流入)
+                    agg_hm = agg[agg["net_mf_amount"] > 0].copy()
+                    if not agg_hm.empty:
+                        t_mx = agg_hm["turnover_rate"].max() or 1.0
+                        m_mx = agg_hm["net_mf_amount"].max() or 1.0
+                        agg_hm["hs"] = agg_hm["turnover_rate"] / t_mx * 60 + agg_hm["net_mf_amount"] / m_mx * 40
+                        hist_hot[td] = set(agg_hm.nlargest(8, "hs")["sector"].tolist())
+                    else:
                         hist_hot[td] = set()
-                        continue
-                    t_mx = agg["turnover_rate"].max() or 1.0
-                    m_mx = agg["net_mf_amount"].max() or 1.0
-                    agg["hs"] = agg["turnover_rate"] / t_mx * 60 + agg["net_mf_amount"] / m_mx * 40
-                    hist_hot[td] = set(agg.nlargest(8, "hs")["sector"].tolist())
-        
+                        
+                    # 机构 (筹码集中)
+                    hist_inst[td] = set(agg.nlargest(8, "chips_peak_pct")["sector"].tolist()) if not agg.empty else set()
+                    
+                    # 主力 (纯流入)
+                    agg_mc = agg[agg["net_mf_amount"] > 0].copy()
+                    hist_main[td] = set(agg_mc.nlargest(8, "net_mf_amount")["sector"].tolist()) if not agg_mc.empty else set()
+
         hot_money_themes = []
-        if not df_hm.empty:
-            df_hm["sector"] = df_hm["industry"].apply(lambda x: x.split(" | ")[1] if " | " in x else x)
-            df_sector_hm = df_hm.groupby("sector").agg({
+        inst_themes = []
+        main_cap_themes = []
+        
+        def get_signal(streak, style="hot_money"):
+            if style == "inst":
+                if streak <= 2: return "初露锋芒·建仓", "yellow"
+                elif streak <= 5: return f"持续{streak}日·筹码沉淀", "green"
+                else: return f"长线锁仓·趋势护城河", "gray"
+            else:
+                if streak == 1: return "初次爆发·观察", "gray"
+                elif streak == 2: return "二次确认·试探", "yellow"
+                elif streak <= 4: return f"持续{streak}日·重点关注", "green"
+                elif streak <= 6: return f"连续{streak}日·末升段谨慎", "orange"
+                else: return f"连续{streak}日·高位警戒", "red"
+            
+        def get_streak(sector, hist_dict):
+            streak = 1
+            for d in recent_dates[1:]:
+                if sector in hist_dict.get(d, set()):
+                    streak += 1
+                else:
+                    break
+            return streak
+
+        if not df_today.empty:
+            df_today["sector"] = df_today["industry"].apply(lambda x: x.split(" | ")[1] if " | " in x else x)
+            df_sector = df_today.groupby("sector").agg({
                 "turnover_rate": "mean",
-                "net_mf_amount": "sum"
+                "net_mf_amount": "sum",
+                "chips_peak_pct": "mean",
+                "amount": "sum"
             }).reset_index()
             
-            # 过滤主力大单流为负的题材，确保完全对齐“主力流入为正”的定义
-            df_sector_hm = df_sector_hm[df_sector_hm["net_mf_amount"] > 0]
-            
-            if not df_sector_hm.empty:
-                t_max = df_sector_hm["turnover_rate"].max() if df_sector_hm["turnover_rate"].max() > 0 else 1.0
-                m_max = df_sector_hm["net_mf_amount"].max() if df_sector_hm["net_mf_amount"].max() > 0 else 1.0
-                
-                # 游资综合得分 = (行业平均换手率/最大换手率) * 60 + (行业净买入额/最大净买入) * 40
-                df_sector_hm["score_turnover"] = df_sector_hm["turnover_rate"] / t_max * 60.0
-                df_sector_hm["score_inflow"] = df_sector_hm["net_mf_amount"] / m_max * 40.0
-                df_sector_hm["hot_score"] = df_sector_hm["score_turnover"] + df_sector_hm["score_inflow"]
-                
-                df_sector_hm = df_sector_hm.sort_values(by="hot_score", ascending=False).head(5)
-                for _, r in df_sector_hm.iterrows():
-                    sector_name = r["sector"]
-                    # 连续上榜天数：从今日往前倒推，连续出现在热点集合中则计数
-                    streak = 1
-                    for d in recent_dates[1:]:
-                        if sector_name in hist_hot.get(d, set()):
-                            streak += 1
-                        else:
-                            break
-                    # 操盘信号
-                    if streak == 1:
-                        sig, sig_color = "初次爆发·观察", "gray"
-                    elif streak == 2:
-                        sig, sig_color = "二次确认·试探", "yellow"
-                    elif streak <= 4:
-                        sig, sig_color = f"持续{streak}日·重点关注", "green"
-                    elif streak <= 6:
-                        sig, sig_color = f"连续{streak}日·末升段谨慎", "orange"
-                    else:
-                        sig, sig_color = f"连续{streak}日·高位警戒", "red"
-                    
+            # --- 1. 游资热点 (Hot Money) ---
+            df_hm = df_sector[df_sector["net_mf_amount"] > 0].copy()
+            if not df_hm.empty:
+                t_max = df_hm["turnover_rate"].max() if df_hm["turnover_rate"].max() > 0 else 1.0
+                m_max = df_hm["net_mf_amount"].max() if df_hm["net_mf_amount"].max() > 0 else 1.0
+                df_hm["hot_score"] = df_hm["turnover_rate"] / t_max * 60.0 + df_hm["net_mf_amount"] / m_max * 40.0
+                df_hm = df_hm.sort_values(by="hot_score", ascending=False).head(10)
+                for _, r in df_hm.iterrows():
+                    streak = get_streak(r["sector"], hist_hot)
+                    sig, sig_color = get_signal(streak)
                     hot_money_themes.append({
-                        "sector": sector_name,
+                        "sector": r["sector"],
                         "avg_turnover": round(float(r["turnover_rate"]), 2),
+                        "total_amount": round(float(r["amount"]) / 100000, 2), # amount 是千元，除以 100000 变为 亿元
                         "net_inflow": round(float(r["net_mf_amount"]) / 1e4, 2),
                         "hot_score": round(float(r["hot_score"]), 1),
                         "streak_days": streak,
                         "signal": sig,
                         "signal_color": sig_color,
                     })
-        
-        # 5. 获取大盘状态
-        market_status = get_market_status()
-        regime = market_status.get("regime", "RANGE")
-        
-        return {
+
+            # --- 2. 机构控盘 (Institution) ---
+            df_inst = df_sector.copy()
+            if not df_inst.empty:
+                df_inst = df_inst.sort_values(by="chips_peak_pct", ascending=False).head(10)
+                for _, r in df_inst.iterrows():
+                    streak = get_streak(r["sector"], hist_inst)
+                    sig, sig_color = get_signal(streak, style="inst")
+                    inst_themes.append({
+                        "sector": r["sector"],
+                        "chips_peak": round(float(r["chips_peak_pct"]), 2),
+                        "net_inflow": round(float(r["net_mf_amount"]) / 1e4, 2),
+                        "streak_days": streak,
+                        "signal": sig,
+                        "signal_color": sig_color,
+                    })
+                    
+            # --- 3. 主力扫货 (Main Capital) ---
+            df_mc = df_sector[df_sector["net_mf_amount"] > 0].copy()
+            if not df_mc.empty:
+                df_mc = df_mc.sort_values(by="net_mf_amount", ascending=False).head(10)
+                mc_max = df_mc["net_mf_amount"].max() if df_mc["net_mf_amount"].max() > 0 else 1.0
+                for _, r in df_mc.iterrows():
+                    streak = get_streak(r["sector"], hist_main)
+                    sig, sig_color = get_signal(streak)
+                    main_cap_themes.append({
+                        "sector": r["sector"],
+                        "net_inflow": round(float(r["net_mf_amount"]) / 1e4, 2),
+                        "inflow_ratio": round(float(r["net_mf_amount"]) / mc_max * 100, 1),
+                        "streak_days": streak,
+                        "signal": sig,
+                        "signal_color": sig_color,
+                    })
+
+        # 5. 获取市场状态
+        try:
+            status = get_market_status()
+            regime = status.get("regime", "RANGE")
+        except Exception:
+            regime = "RANGE"
+
+        return clean_nan_inf({
             "date": str(latest_date),
             "adv_dec": {
                 "up": int(up_count),
@@ -1321,8 +1567,10 @@ def get_market_overview_data():
             "outflow_rank": top_outflow,
             "style_rotation": style_series,
             "hot_money_themes": hot_money_themes,
+            "inst_themes": inst_themes,
+            "main_cap_themes": main_cap_themes,
             "regime": regime
-        }
+        })
         
     except Exception as e:
         import logging
@@ -1415,16 +1663,27 @@ def diagnose_stock(ts_code: str, strategy: str):
         if not latest_date:
             return {"error": "无因子数据"}
             
-        # 3. 读取当日全市场因子，计算目标股票的排名分位数
+        # 3. 读取 T-1 日全市场因子（盘后已完全稳定），计算目标股票的排名分位数
         if strategy == "scanner":
-            latest_fac = pd.read_sql("SELECT MAX(trade_date) FROM factor_values", conn).iloc[0,0]
+            # 使用 T-1 日因子避免盘中数据污染
+            fac_dates_d = pd.read_sql("SELECT DISTINCT trade_date FROM factor_values ORDER BY trade_date DESC LIMIT 2", conn)["trade_date"].tolist()
+            latest_fac = fac_dates_d[1] if len(fac_dates_d) >= 2 else fac_dates_d[0]
             latest_cyq = pd.read_sql("SELECT MAX(trade_date) FROM stock_cyq_perf", conn).iloc[0,0]
             latest_mf  = pd.read_sql("SELECT MAX(trade_date) FROM moneyflow", conn).iloc[0,0]
             latest_pr  = pd.read_sql("SELECT MAX(trade_date) FROM daily_prices", conn).iloc[0,0]
             
-            df_fac = pd.read_sql("SELECT stock_code, return_5d, return_20d, turnover_rate_20d, north_net_inflow_ratio, profit_ratio_estimate, chip_concentration, excess_return_20d, volatility_20d, return_60d, volatility_60d FROM factor_values WHERE trade_date=?", conn, params=(latest_fac,))
+            # 读取因子数据（含新五维权重所需因子）
+            df_fac = pd.read_sql(
+                "SELECT stock_code, return_5d, return_20d, return_60d, return_120d, "
+                "turnover_rate_5d, turnover_rate_20d, volatility_10d, volatility_20d, volatility_60d, "
+                "north_net_inflow_ratio, profit_ratio_estimate, chip_concentration, "
+                "excess_return_20d, atr_ratio, max_drawdown_20d "
+                "FROM factor_values WHERE trade_date=?",
+                conn, params=(latest_fac,)
+            )
+            # 加载五维权重，直接用纯因子分（不混合其他信号）
             _, rw = _load_pkl_weights(WEIGHTS_PATH)
-            if not rw: rw = {"north_net_inflow_ratio": -0.18, "return_5d": -0.54, "turnover_rate_20d": -0.28}
+            if not rw: rw = {"return_60d": -0.616, "volatility_20d": -0.150, "north_net_inflow_ratio": -0.199, "volatility_60d": -0.049, "volatility_10d": 0.019}
             df_fac["factor_score"] = 0.0
             for f, w in rw.items():
                 if f in df_fac.columns: df_fac["factor_score"] += w * df_fac[f].rank(pct=True, na_option='bottom')
@@ -1568,7 +1827,7 @@ def diagnose_stock(ts_code: str, strategy: str):
 
 def get_style_stocks(short_date: str, style: str):
     """
-    根据简写日期（如 "07/10"）和风格（如 "高换手风格 (Turnover)"），获取排名前20的支撑个股。
+    根据简写日期（如 "07/10"）和风格（如 "高换手风格 (Turnover)"），获取排名前20的支撑个股，包含板块和近5日涨幅。
     """
     conn = sqlite3.connect(DB_PATH)
     try:
@@ -1596,7 +1855,7 @@ def get_style_stocks(short_date: str, style: str):
             return {"error": f"Invalid style {style}"}
             
         sql = f"""
-            SELECT dp.ts_code, s.name, dp.pct_chg, db.turnover_rate, 
+            SELECT dp.ts_code, s.name, s.market, s.industry, dp.pct_chg, db.turnover_rate, 
                    cyq.chips_peak_pct, (mf.net_mf_amount / 10000.0) as net_mf_amount
             FROM daily_prices dp
             LEFT JOIN stock_list s ON dp.ts_code = s.ts_code
@@ -1610,7 +1869,39 @@ def get_style_stocks(short_date: str, style: str):
         df = pd.read_sql(sql, conn, params=(target_date,))
         df = df.round(2)
         df["name"] = df["name"].fillna("未知")
+        df["market"] = df["market"].fillna("--")
+        # 精简行业名：取 " | " 后半段
+        df["industry"] = df["industry"].fillna("--").apply(
+            lambda x: str(x).split(" | ")[-1] if " | " in str(x) else str(x)
+        )
         df.fillna(0, inplace=True)
+        
+        # 批量查询近5日涨幅
+        codes = tuple(df["ts_code"].tolist())
+        if codes:
+            # 先查出近5个交易日，再平铺进参数，避免嵌套子查询绑定错位
+            cursor2 = conn.cursor()
+            cursor2.execute("SELECT DISTINCT trade_date FROM daily_prices ORDER BY trade_date DESC LIMIT 5")
+            recent_5_dates = [r[0] for r in cursor2.fetchall()]
+            
+            code_ph = ",".join(["?" for _ in codes])
+            date_ph = ",".join(["?" for _ in recent_5_dates])
+            df_5d = pd.read_sql(
+                f"SELECT ts_code, pct_chg FROM daily_prices "
+                f"WHERE ts_code IN ({code_ph}) AND trade_date IN ({date_ph}) "
+                f"ORDER BY ts_code, trade_date",
+                conn, params=list(codes) + recent_5_dates
+            )
+            pct5d_map = {}
+            for code, grp in df_5d.groupby("ts_code"):
+                cum = 1.0
+                for v in grp["pct_chg"].fillna(0):
+                    cum *= (1 + v / 100)
+                pct5d_map[code] = round((cum - 1) * 100, 2)
+            df["pct_chg_5d"] = df["ts_code"].map(pct5d_map).fillna(0).round(2)
+        else:
+            df["pct_chg_5d"] = 0.0
+        
         return {"date": target_date, "style": style, "stocks": df.to_dict(orient="records")}
         
     except Exception as e:
@@ -1618,6 +1909,7 @@ def get_style_stocks(short_date: str, style: str):
         return {"error": str(e), "trace": traceback.format_exc()}
     finally:
         conn.close()
+
 
 import datetime
 def record_visitor(ip: str, device_id: str, path: str, user_agent: str):
@@ -1655,3 +1947,1042 @@ def get_visitor_stats():
         "total_pv": total_pv,
         "total_uv": total_uv
     }
+
+
+# ─────────────────────────────────────────────────────────
+# 建仓扫描历史累计层
+# ─────────────────────────────────────────────────────────
+
+def _ensure_scan_history_table(conn):
+    """确保 scan_history 表存在（首次使用自动建表）"""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS scan_history (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            scan_date     TEXT    NOT NULL,          -- 扫描日期 YYYYMMDD
+            ts_code       TEXT    NOT NULL,          -- 股票代码
+            name          TEXT,                      -- 股票名称
+            industry      TEXT,                      -- 行业
+            rank          INTEGER,                   -- 当日排名
+            build_score   REAL,                      -- 综合建仓评分(0-100)
+            factor_score  REAL,                      -- 纯五维因子分(0-100)
+            winner_rate   REAL,                      -- 筹码胜率(%)
+            big_net_inflow REAL,                     -- 大资金净流入(亿)
+            close         REAL,                      -- 当日收盘价
+            pct_chg       REAL,                      -- 当日涨跌幅(%)
+            mvo_weight    REAL,                      -- MVO建议仓位(%)
+            regime        TEXT,                      -- 市场状态
+            reason        TEXT,                      -- 入选理由
+            UNIQUE(scan_date, ts_code)               -- 同日同股去重
+        )
+    """)
+    conn.commit()
+
+
+def save_scan_history(scan_result: dict) -> int:
+    """
+    将本次扫描结果持久化到 scan_history 表。
+    参数：get_build_position_opportunities() 的返回值
+    返回：本次写入的记录数
+    """
+    stocks = scan_result.get("stocks", [])
+    meta   = scan_result.get("meta", {})
+    if not stocks:
+        return 0
+
+    scan_date = str(meta.get("scan_date", "")).replace("-", "")
+    if not scan_date:
+        import datetime
+        scan_date = datetime.datetime.now().strftime("%Y%m%d")
+
+    # 获取当日市场状态
+    try:
+        status = get_market_status()
+        regime = status.get("regime", "RANGE").upper()
+    except Exception:
+        regime = "RANGE"
+
+    conn = get_db_connection(DB_PATH)
+    _ensure_scan_history_table(conn)
+
+    written = 0
+    try:
+        for s in stocks:
+            conn.execute("""
+                INSERT OR IGNORE INTO scan_history
+                    (scan_date, ts_code, name, industry, rank, build_score,
+                     factor_score, winner_rate, big_net_inflow, close,
+                     pct_chg, mvo_weight, regime, reason)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """, (
+                scan_date,
+                s.get("ts_code", ""),
+                s.get("name", ""),
+                s.get("industry", ""),
+                s.get("rank", 0),
+                s.get("build_score", 0.0),
+                s.get("factor_score", 0.0),
+                s.get("winner_rate", 0.0),
+                s.get("big_net_inflow", 0.0),
+                s.get("close", 0.0),
+                s.get("pct_chg", 0.0),
+                s.get("mvo_weight", 0.0),
+                regime,
+                s.get("reason", ""),
+            ))
+            if conn.execute("SELECT changes()").fetchone()[0]:
+                written += 1
+        conn.commit()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"[scan_history] 写入失败: {e}")
+    finally:
+        conn.close()
+
+    return written
+
+
+def get_scan_history(days: int = 30, top_n_per_day: int = 0,
+                     ts_code: str = "", min_appear: int = 1) -> dict:
+    """
+    查询建仓扫描历史累计数据。
+
+    参数：
+        days          -- 查询最近 N 天（默认30天）
+        top_n_per_day -- 只取每日 rank <= N 的记录（0 表示不限）
+        ts_code       -- 按股票代码过滤（空字符串表示全部）
+        min_appear    -- 最少出现 N 次才纳入频率排行（默认1）
+
+    返回：
+        {
+            "summary": 上榜频率排行（按出现次数降序），
+            "daily":   按日期分组的每日快照，
+            "streak":  当前连续上榜天数排行,
+            "meta": {date_range, total_records, ...}
+        }
+    """
+    conn = sqlite3.connect(DB_PATH)
+    _ensure_scan_history_table(conn)
+
+    # 计算日期下限
+    import datetime
+    date_from = (datetime.datetime.now() - datetime.timedelta(days=days)).strftime("%Y%m%d")
+
+    # 基础查询条件
+    where_clauses = ["scan_date >= ?"]
+    params = [date_from]
+    if top_n_per_day > 0:
+        where_clauses.append(f"rank <= {int(top_n_per_day)}")
+    if ts_code:
+        where_clauses.append("ts_code = ?")
+        params.append(ts_code)
+    where_sql = " AND ".join(where_clauses)
+
+    # A. 全量明细
+    df = pd.read_sql(
+        f"SELECT * FROM scan_history WHERE {where_sql} ORDER BY scan_date DESC, rank ASC",
+        conn, params=params
+    )
+
+    if df.empty:
+        conn.close()
+        return {
+            "summary": [], "daily": {}, "streak": [],
+            "meta": {"days": days, "total_records": 0, "date_from": date_from}
+        }
+
+    # B. 频率汇总（Summary）
+    grp = df.groupby("ts_code").agg(
+        name          = ("name",          "last"),
+        industry      = ("industry",      "last"),
+        appear_count  = ("scan_date",     "count"),
+        avg_rank      = ("rank",          "mean"),
+        avg_score     = ("build_score",   "mean"),
+        avg_factor    = ("factor_score",  "mean"),
+        avg_inflow    = ("big_net_inflow","mean"),
+        last_date     = ("scan_date",     "max"),
+        last_rank     = ("rank",          lambda x: x[df.loc[x.index,"scan_date"].idxmax()]),
+    ).reset_index()
+    grp = grp[grp["appear_count"] >= min_appear]
+    grp = grp.sort_values(["appear_count","avg_rank"], ascending=[False, True])
+    grp["avg_rank"]   = grp["avg_rank"].round(1)
+    grp["avg_score"]  = grp["avg_score"].round(1)
+    grp["avg_factor"] = grp["avg_factor"].round(1)
+    grp["avg_inflow"] = grp["avg_inflow"].round(2)
+    summary = grp.to_dict(orient="records")
+
+    # C. 按日期分组快照（Daily）
+    all_dates = sorted(df["scan_date"].unique(), reverse=True)
+    daily = {}
+    for d in all_dates:
+        rows = df[df["scan_date"] == d].to_dict(orient="records")
+        daily[d] = rows
+
+    # D. 连续上榜天数排行（Streak）
+    # 取最近连续出现的天数（从今天往前算，中断即停）
+    sorted_dates = sorted(df["scan_date"].unique(), reverse=True)
+    streak_map = {}  # ts_code -> 连续天数
+    for stock in df["ts_code"].unique():
+        dates_of_stock = set(df[df["ts_code"] == stock]["scan_date"].tolist())
+        streak = 0
+        for d in sorted_dates:
+            if d in dates_of_stock:
+                streak += 1
+            else:
+                break  # 中断
+        streak_map[stock] = streak
+
+    streak_df = df[["ts_code","name","industry"]].drop_duplicates("ts_code").copy()
+    streak_df["streak_days"] = streak_df["ts_code"].map(streak_map)
+    streak_df = streak_df.sort_values("streak_days", ascending=False)
+    streak_list = streak_df[streak_df["streak_days"] >= 2].to_dict(orient="records")
+
+    conn.close()
+    return {
+        "summary": summary,
+        "daily":   daily,
+        "streak":  streak_list,
+        "meta": {
+            "days":          days,
+            "total_records": len(df),
+            "date_from":     date_from,
+            "date_latest":   sorted_dates[0] if sorted_dates else "",
+            "unique_stocks": df["ts_code"].nunique(),
+            "scan_days":     len(all_dates),
+        }
+    }
+
+
+# ─────────────────────────────────────────────────────────
+# 建仓时机预警评分系统
+# ─────────────────────────────────────────────────────────
+
+def get_timing_alerts(lookback_days: int = 20) -> dict:
+    """
+    计算今日在榜股票的建仓时机评分。
+
+    评分规则（满分 100）：
+      +25  初次入榜：距上次出现 ≥ 3 个交易日（新鲜信号）
+      +20  排名跃升：昨日排名 > 10 → 今日排名 ≤ 5（动能加速）
+      +15  连续第3天：streak == 3（信号已验证，黄金入场窗口）
+      +12  二次入榜：消失 ≥ 2 天后重新出现（低位二次共振）
+      +10  因子分 > 90%（模型信心极强）
+      +18  Regime = Bear/Dark（策略主场，信号权重翻倍）
+      -15  连续天数 > 7（信号可能透支）
+      -10  今日涨幅 > 3%（追涨风险）
+      -8   今日涨幅 > 5%（高追风险极高）
+
+    返回：
+      alerts: 按评分降序的股票列表，含信号拆解
+      summary: 三级分布统计
+      regime: 当前市场状态
+      scan_date: 评分基准日期
+    """
+    import datetime
+
+    conn = sqlite3.connect(DB_PATH)
+    _ensure_scan_history_table(conn)
+
+    # ── 1. 获取最新扫描日期（今日在榜）────────────────────
+    latest_dates = pd.read_sql(
+        "SELECT DISTINCT scan_date FROM scan_history ORDER BY scan_date DESC LIMIT 2",
+        conn
+    )["scan_date"].tolist()
+
+    if not latest_dates:
+        conn.close()
+        return {"alerts": [], "summary": {}, "regime": "UNKNOWN", "scan_date": ""}
+
+    today_date = latest_dates[0]
+
+    # ── 2. 今日在榜股票 ───────────────────────────────────
+    df_today = pd.read_sql(
+        "SELECT * FROM scan_history WHERE scan_date = ?",
+        conn, params=(today_date,)
+    )
+
+    if df_today.empty:
+        conn.close()
+        return {"alerts": [], "summary": {}, "regime": "UNKNOWN", "scan_date": today_date}
+
+    # ── 3. 最近 lookback_days 天的历史（用于计算 streak / gap）
+    cutoff = (datetime.datetime.strptime(today_date, "%Y%m%d")
+              - datetime.timedelta(days=lookback_days)).strftime("%Y%m%d")
+    df_hist = pd.read_sql(
+        "SELECT scan_date, ts_code, rank, factor_score, pct_chg "
+        "FROM scan_history WHERE scan_date >= ? AND scan_date <= ? "
+        "ORDER BY scan_date DESC",
+        conn, params=(cutoff, today_date)
+    )
+
+    # 不含今日的历史
+    df_prev = df_hist[df_hist["scan_date"] < today_date]
+
+    # ── 4. 获取当前市场状态 ────────────────────────────────
+    try:
+        status = get_market_status()
+        regime = status.get("regime", "RANGE").upper()
+    except Exception:
+        regime = "RANGE"
+
+    # ── 5. 计算每只股票的信号与评分 ──────────────────────
+    all_prev_dates = sorted(df_prev["scan_date"].unique(), reverse=True)
+
+    alerts = []
+    for _, row in df_today.iterrows():
+        ts_code      = row["ts_code"]
+        today_rank   = int(row["rank"])
+        factor_score = float(row["factor_score"] or 0)
+        pct_chg      = float(row["pct_chg"] or 0)
+
+        # 该股历史出现记录（最近 lookback_days 天，不含今日）
+        stock_prev = df_prev[df_prev["ts_code"] == ts_code].sort_values("scan_date", ascending=False)
+        prev_dates_stock = stock_prev["scan_date"].tolist()  # 降序
+
+        # A. 计算连续上榜天数（从今日往前）
+        streak = 1  # 今日算第1天
+        for d in all_prev_dates:
+            if d in prev_dates_stock:
+                streak += 1
+            else:
+                break
+
+        # B. 上次出现日期 & 间隔天数（gap）
+        if prev_dates_stock:
+            last_appear = prev_dates_stock[0]  # 降序第一个 = 最近一次
+            # 计算与今日之间间隔了多少个扫描日
+            all_scan_dates_sorted = sorted(
+                df_hist["scan_date"].unique().tolist(), reverse=True
+            )
+            today_idx  = all_scan_dates_sorted.index(today_date)
+            last_idx   = all_scan_dates_sorted.index(last_appear)
+            gap_trading_days = last_idx - today_idx  # 中间跳过的扫描日数
+        else:
+            gap_trading_days = 999  # 从未出现过
+
+        # C. 昨日排名（用于判断排名跃升）
+        yesterday_date = all_prev_dates[0] if all_prev_dates else None
+        yesterday_rank = None
+        if yesterday_date:
+            yest_row = df_prev[
+                (df_prev["ts_code"] == ts_code) & (df_prev["scan_date"] == yesterday_date)
+            ]
+            if not yest_row.empty:
+                yesterday_rank = int(yest_row.iloc[0]["rank"])
+
+        # ── 信号判断 ──────────────────────────────────────
+        signals = []
+        score   = 0
+
+        # 初次入榜（gap ≥ 3 个交易日，或从未出现）
+        is_first_appear = gap_trading_days >= 3
+        if is_first_appear:
+            score += 25
+            signals.append({
+                "type": "FIRST_APPEAR",
+                "label": "🌟 初次入榜",
+                "desc": f"距上次出现已间隔 {gap_trading_days if gap_trading_days < 999 else '首次'} 个交易日",
+                "points": 25
+            })
+
+        # 二次入榜（gap == 2，精确二次共振）
+        is_reentry = gap_trading_days == 2
+        if is_reentry:
+            score += 12
+            signals.append({
+                "type": "REENTRY",
+                "label": "🔄 二次入榜",
+                "desc": "短暂消失后重新入选，低位二次共振",
+                "points": 12
+            })
+
+        # 连续第 3 天（黄金窗口）
+        if streak == 3:
+            score += 15
+            signals.append({
+                "type": "STREAK_3",
+                "label": "⚡ 连续第3天",
+                "desc": "信号连续验证，黄金建仓窗口",
+                "points": 15
+            })
+
+        # 排名跃升（昨日 > 10 → 今日 ≤ 5）
+        rank_surge = yesterday_rank is not None and yesterday_rank > 10 and today_rank <= 5
+        if rank_surge:
+            score += 20
+            signals.append({
+                "type": "RANK_SURGE",
+                "label": "🚀 排名跃升",
+                "desc": f"昨日 #{yesterday_rank} → 今日 #{today_rank}，动能加速",
+                "points": 20
+            })
+
+        # 因子分超强（> 90）
+        if factor_score > 90:
+            score += 10
+            signals.append({
+                "type": "HIGH_SCORE",
+                "label": "💯 因子极强",
+                "desc": f"因子分 {factor_score:.1f}%，模型信心极高",
+                "points": 10
+            })
+
+        # 市场状态加成（Bear / Dark = 均值回归策略主场）
+        regime_bonus = regime in ("BEAR", "DARK")
+        if regime_bonus:
+            score += 18
+            signals.append({
+                "type": "REGIME_MATCH",
+                "label": "🎯 状态匹配",
+                "desc": f"当前 {regime} 市，均值回归策略主场",
+                "points": 18
+            })
+
+        # 惩罚：连续天数过长（> 7天，信号可能透支）
+        if streak > 7:
+            score -= 15
+            signals.append({
+                "type": "OVERHEATED",
+                "label": "⚠️ 信号过热",
+                "desc": f"已连续上榜 {streak} 天，获利盘风险增大",
+                "points": -15
+            })
+
+        # 惩罚：今日涨幅过大（追涨风险）
+        if pct_chg > 5:
+            score -= 18
+            signals.append({
+                "type": "CHASING_HIGH",
+                "label": "🔴 涨幅过高",
+                "desc": f"今日涨幅 +{pct_chg:.1f}%，追高风险极大",
+                "points": -18
+            })
+        elif pct_chg > 3:
+            score -= 10
+            signals.append({
+                "type": "CHASE_RISK",
+                "label": "🟡 追涨提示",
+                "desc": f"今日涨幅 +{pct_chg:.1f}%，注意追涨风险",
+                "points": -10
+            })
+
+        score = max(0, min(100, score))  # 钳位到 [0, 100]
+
+        # 预警等级
+        if score >= 60:
+            level = "GOLDEN"     # 最佳建仓窗口
+        elif score >= 35:
+            level = "WATCH"      # 观察跟踪期
+        else:
+            level = "NORMAL"     # 普通信号
+
+        alerts.append({
+            "ts_code":      ts_code,
+            "name":         str(row["name"]),
+            "industry":     str(row["industry"]),
+            "rank":         today_rank,
+            "factor_score": round(factor_score, 1),
+            "pct_chg":      round(pct_chg, 2),
+            "close":        round(float(row["close"] or 0), 2),
+            "streak":       streak,
+            "gap":          gap_trading_days if gap_trading_days < 999 else -1,
+            "yesterday_rank": yesterday_rank,
+            "score":        score,
+            "level":        level,
+            "signals":      signals,
+            "regime":       regime,
+        })
+
+    # 按评分降序
+    alerts.sort(key=lambda x: x["score"], reverse=True)
+
+    # 统计三级分布
+    golden = [a for a in alerts if a["level"] == "GOLDEN"]
+    watch  = [a for a in alerts if a["level"] == "WATCH"]
+    normal = [a for a in alerts if a["level"] == "NORMAL"]
+
+    conn.close()
+    return {
+        "alerts":   alerts,
+        "golden":   golden,
+        "watch":    watch,
+        "normal":   normal,
+        "summary": {
+            "total":   len(alerts),
+            "golden":  len(golden),
+            "watch":   len(watch),
+            "normal":  len(normal),
+        },
+        "regime":    regime,
+        "scan_date": today_date,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# T+1 画像分析路由层数据服务
+# ─────────────────────────────────────────────────────────────────────────────
+def get_portrait_analysis(days: int = 10):
+    """
+    T+1 上涨画像分析：从最近 N 天推荐记录中，
+    统计上涨/下跌组在各因子维度上的差异分布，
+    供前端画像分析专属路由页面使用。
+
+    返回：
+        summary         : 汇总胜率与样本量
+        daily_win_rate  : 每天胜率时序
+        grade_stats     : 各画像等级（A/B/C/D）胜率分布
+        factor_compare  : 上涨/下跌组关键因子均值对比
+        score_buckets   : factor_score 分桶胜率
+        wr_buckets      : winner_rate 分桶胜率
+        chip_buckets    : chips_concentration 分桶胜率
+        top_up_stocks   : 近期上涨组画像最佳股票样本
+        top_dn_stocks   : 近期下跌组样本（用于反向参考）
+    """
+    try:
+        from portrait_router import compute_portrait_score
+        portrait_enabled = True
+    except ImportError:
+        portrait_enabled = False
+
+    conn = get_db_connection(DB_PATH)
+    conn.execute("PRAGMA journal_mode=WAL;")
+    try:
+        # 1. 取最近 N 天有结算数据的推荐记录
+        df_rec = pd.read_sql(f"""
+            SELECT r.recommend_date, r.ts_code,
+                   r.regime, r.factor_score as score,
+                   r.winner_rate, r.chips_concentration, r.net_mf_amount,
+                   r.ret_1d, r.alpha_1d,
+                   CASE WHEN r.ret_1d > 0 THEN 1 ELSE 0 END as is_up,
+                   s.name, s.industry
+            FROM recommendation_tracker r
+            LEFT JOIN stock_list s ON r.ts_code = s.ts_code
+            WHERE r.ret_1d IS NOT NULL
+            ORDER BY r.recommend_date DESC
+            LIMIT {days * 200}
+        """, conn)
+
+        if df_rec.empty:
+            return {"error": "暂无结算数据，请等待推荐结算完成"}
+
+        # 只保留最近 days 个推荐日
+        recent_dates = sorted(df_rec["recommend_date"].unique())[-days:]
+        df_rec = df_rec[df_rec["recommend_date"].isin(recent_dates)]
+
+        # 2. 关联 factor_values 取画像所需因子
+        date_ph = ",".join([f"'{d}'" for d in recent_dates])
+        codes   = df_rec["ts_code"].unique().tolist()
+        code_ph = ",".join([f"'{c}'" for c in codes])
+        df_fv = pd.read_sql(f"""
+            SELECT trade_date as recommend_date, stock_code as ts_code,
+                   profit_ratio_estimate, pe_ttm, hot_money_score,
+                   return_5d, return_20d, return_60d,
+                   chip_concentration, vol_ratio,
+                   volatility_60d, north_net_inflow_ratio
+            FROM factor_values
+            WHERE trade_date IN ({date_ph})
+              AND stock_code IN ({code_ph})
+        """, conn)
+
+        df = pd.merge(df_rec, df_fv, on=["recommend_date", "ts_code"], how="left")
+
+        # 3. 计算画像分
+        if portrait_enabled:
+            portrait_scores = []
+            portrait_grades = []
+            for _, row in df.iterrows():
+                # chips_concentration 自动检测单位：< 1 则为小数，需转百分比
+                chips_raw = float(row.get("chips_concentration") or 0)
+                chips_pct = chips_raw * 100.0 if 0 < chips_raw < 1 else chips_raw
+                res = compute_portrait_score(
+                    factor_score           = float(row.get("score") or 0),
+                    profit_ratio_estimate  = float(row.get("profit_ratio_estimate") or 0.5),
+                    pe_ttm                 = float(row.get("pe_ttm") or 9999),
+                    hot_money_score        = float(row.get("hot_money_score") or 0.5),
+                    return_5d              = float(row.get("return_5d") or 0),
+                    chips_concentration    = chips_pct,
+                    volatility_60d         = float(row.get("volatility_60d") or 1.4),
+                )
+                portrait_scores.append(res["portrait_score"])
+                portrait_grades.append(res["portrait_grade"])
+            df["portrait_score"] = portrait_scores
+            df["portrait_grade"] = portrait_grades
+        else:
+            df["portrait_score"] = 0.0
+            df["portrait_grade"] = "N/A"
+
+        total   = len(df)
+        up_cnt  = int(df["is_up"].sum())
+        dn_cnt  = total - up_cnt
+        win_rate = round(float(df["is_up"].mean()), 4)
+        avg_ret  = round(float(df["ret_1d"].mean()), 4)
+
+        # 4. 每日胜率时序
+        daily = df.groupby("recommend_date").agg(
+            total=("is_up","count"),
+            up=("is_up","sum"),
+            avg_ret=("ret_1d","mean"),
+            avg_score=("score","mean"),
+            regime=("regime","first")
+        ).reset_index()
+        daily["win_rate"] = (daily["up"] / daily["total"]).round(4)
+        daily["avg_ret"]  = daily["avg_ret"].round(4)
+        daily_list = daily.to_dict(orient="records")
+
+        # 5. 因子对比（上涨 vs 下跌）
+        factor_cols = ["score","winner_rate","chips_concentration",
+                       "profit_ratio_estimate","pe_ttm","hot_money_score",
+                       "return_5d","return_20d","return_60d",
+                       "volatility_60d","north_net_inflow_ratio","vol_ratio"]
+        up_df = df[df["is_up"] == 1]
+        dn_df = df[df["is_up"] == 0]
+        factor_compare = []
+        for col in factor_cols:
+            if col not in df.columns:
+                continue
+            up_m = float(up_df[col].mean()) if not up_df[col].isna().all() else 0.0
+            dn_m = float(dn_df[col].mean()) if not dn_df[col].isna().all() else 0.0
+            factor_compare.append({
+                "factor": col,
+                "up_mean": round(up_m, 4),
+                "dn_mean": round(dn_m, 4),
+                "diff":    round(up_m - dn_m, 4),
+                "direction": "up_better" if up_m > dn_m else "dn_better",
+            })
+
+        # 6. 画像等级胜率
+        grade_stats = []
+        if portrait_enabled:
+            for grade in ["A", "B", "C", "D"]:
+                sub = df[df["portrait_grade"] == grade]
+                if len(sub) == 0:
+                    continue
+                grade_stats.append({
+                    "grade":    grade,
+                    "total":    int(len(sub)),
+                    "up":       int(sub["is_up"].sum()),
+                    "win_rate": round(float(sub["is_up"].mean()), 4),
+                    "avg_ret":  round(float(sub["ret_1d"].mean()), 4),
+                })
+
+        # 7. factor_score 分桶
+        bins_score = [0, 0.6, 0.7, 0.8, 0.9, 1.01]
+        labels_score = ["0-60%", "60-70%", "70-80%", "80-90%", "90-100%"]
+        df["_score_bin"] = pd.cut(df["score"], bins=bins_score, labels=labels_score)
+        score_buckets = df.groupby("_score_bin", observed=True).agg(
+            total=("is_up","count"), up=("is_up","sum"), avg_ret=("ret_1d","mean")
+        ).reset_index()
+        score_buckets["win_rate"] = (score_buckets["up"] / score_buckets["total"]).round(4)
+        score_buckets = score_buckets.rename(columns={"_score_bin": "bucket"})
+        score_buckets_list = score_buckets.to_dict(orient="records")
+
+        # 8. winner_rate 分桶
+        bins_wr = [0, 60, 70, 80, 90, 101]
+        labels_wr = ["<60%", "60-70%", "70-80%", "80-90%", ">90%"]
+        df["_wr_bin"] = pd.cut(df["winner_rate"], bins=bins_wr, labels=labels_wr)
+        wr_buckets = df.groupby("_wr_bin", observed=True).agg(
+            total=("is_up","count"), up=("is_up","sum"), avg_ret=("ret_1d","mean")
+        ).reset_index()
+        wr_buckets["win_rate"] = (wr_buckets["up"] / wr_buckets["total"]).round(4)
+        wr_buckets = wr_buckets.rename(columns={"_wr_bin": "bucket"})
+        wr_buckets_list = wr_buckets.to_dict(orient="records")
+
+        # 9. 筹码集中度分桶
+        bins_chip = [0, 75, 82, 90, 101]
+        labels_chip = ["<75", "75-82", "82-90", ">90"]
+        df["_chip_bin"] = pd.cut(df["chips_concentration"], bins=bins_chip, labels=labels_chip)
+        chip_buckets = df.groupby("_chip_bin", observed=True).agg(
+            total=("is_up","count"), up=("is_up","sum"), avg_ret=("ret_1d","mean")
+        ).reset_index()
+        chip_buckets["win_rate"] = (chip_buckets["up"] / chip_buckets["total"]).round(4)
+        chip_buckets = chip_buckets.rename(columns={"_chip_bin": "bucket"})
+        chip_buckets_list = chip_buckets.to_dict(orient="records")
+
+        # 10. 近期上涨/下跌样本（最多各取 15 条展示）
+        up_sample = up_df.sort_values("ret_1d", ascending=False).head(15)
+        dn_sample = dn_df.sort_values("ret_1d", ascending=True).head(15)
+
+        def to_sample_list(sub_df):
+            rows = []
+            for _, r in sub_df.iterrows():
+                rows.append({
+                    "ts_code":      str(r.get("ts_code", "")),
+                    "name":         str(r.get("name", "未知")),
+                    "industry":     str(r.get("industry", "")),
+                    "recommend_date": str(r.get("recommend_date", "")),
+                    "ret_1d":       round(float(r.get("ret_1d", 0)), 4),
+                    "score":        round(float(r.get("score", 0)), 4),
+                    "winner_rate":  round(float(r.get("winner_rate", 0)), 1),
+                    "chips_concentration": round(float(r.get("chips_concentration", 0)), 1),
+                    "profit_ratio_estimate": round(float(r.get("profit_ratio_estimate", 0)), 3),
+                    "portrait_score": round(float(r.get("portrait_score", 0)), 1),
+                    "portrait_grade": str(r.get("portrait_grade", "-")),
+                })
+            return rows
+
+        return {
+            "summary": {
+                "total":    total,
+                "up_count": up_cnt,
+                "dn_count": dn_cnt,
+                "win_rate": win_rate,
+                "avg_ret_1d": avg_ret,
+                "analysis_days": len(recent_dates),
+                "date_range": f"{recent_dates[0]} ~ {recent_dates[-1]}" if recent_dates else "-",
+            },
+            "daily_win_rate":  daily_list,
+            "grade_stats":     grade_stats,
+            "factor_compare":  factor_compare,
+            "score_buckets":   score_buckets_list,
+            "wr_buckets":      wr_buckets_list,
+            "chip_buckets":    chip_buckets_list,
+            "top_up_stocks":   to_sample_list(up_sample),
+            "top_dn_stocks":   to_sample_list(dn_sample),
+            "portrait_enabled": portrait_enabled,
+        }
+    except Exception as e:
+        import traceback
+        return {"error": str(e), "traceback": traceback.format_exc()}
+    finally:
+        conn.close()
+
+
+# ─────────────────────────────────────────────────────────
+# T+1 画像建仓决策路由层（三层过滤漏斗）
+# ─────────────────────────────────────────────────────────
+def get_portrait_position_pick(top_n: int = 30, strategy: str = "left"):
+    """
+    T+1 画像三层过滤漏斗，自动精选 1-5 支最优建仓股票。
+
+    过滤层说明：
+      层一：portrait_score >= 60（等级 ≥ B）→ 进入候选池
+      层二：今日涨幅 <= 5%（左侧）或 <= 9.5%（右侧）
+      层三：同一细分行业只保留画像分最高的1支（仓位分散）
+
+    返回：
+      picks   : 最终精选股票列表（1-5支）
+      funnel  : 各层统计及被排除股票明细
+      meta    : 数据元信息
+    """
+    from portrait_router import compute_portrait_score, compute_right_side_portrait_score
+
+    conn = get_db_connection(DB_PATH)
+    try:
+        # ── 获取数据日期 ──────────────────────────────────────────────────
+        latest_fac = _get_factor_date(conn)
+        if not latest_fac:
+            return {"picks": [], "funnel": {}, "meta": {"error": "无因子数据"}}
+
+        latest_cyq = pd.read_sql("SELECT MAX(trade_date) FROM stock_cyq_perf", conn).iloc[0, 0]
+        latest_mf  = pd.read_sql("SELECT MAX(trade_date) FROM moneyflow", conn).iloc[0, 0]
+        latest_pr  = pd.read_sql("SELECT MAX(trade_date) FROM daily_prices", conn).iloc[0, 0]
+
+        # ── 因子横截面打分 ────────────────────────────────────────────────
+        df_fac = pd.read_sql(
+            "SELECT stock_code, return_5d, return_20d, return_60d, excess_return_20d, "
+            "       turnover_rate_20d, volatility_20d, volatility_60d, vol_ratio, north_net_inflow_ratio, "
+            "       profit_ratio_estimate, chip_concentration, pe_ttm, hot_money_score "
+            "FROM factor_values WHERE trade_date = ?",
+            conn, params=(latest_fac,)
+        )
+
+        # 剔除 ST、新股、次新股
+        restricted = _get_restricted_stocks(conn)
+        if restricted:
+            df_fac = df_fac[~df_fac["stock_code"].isin(restricted)]
+
+        if strategy == "right":
+            # 右侧动量/资金强相关因子权重
+            rw = {"return_5d": 0.40, "excess_return_20d": 0.30, "turnover_rate_20d": 0.20, "hot_money_score": 0.10}
+        else:
+            _, rw = _load_pkl_weights(WEIGHTS_PATH)
+            if not rw:
+                rw = {"north_net_inflow_ratio": -0.18, "return_5d": -0.54, "turnover_rate_20d": -0.28}
+
+        df_fac["factor_score"] = 0.0
+        for f, w in rw.items():
+            if f in df_fac.columns:
+                df_fac[f"_r_{f}"] = df_fac[f].rank(pct=True, na_option='bottom')
+                df_fac["factor_score"] += w * df_fac[f"_r_{f}"]
+
+        fmin, fmax = df_fac["factor_score"].min(), df_fac["factor_score"].max()
+        frange = fmax - fmin if (fmax - fmin) > 1e-9 else 1.0
+        df_fac["factor_score_norm"] = (df_fac["factor_score"] - fmin) / frange
+
+        # 换手率合理性过滤
+        if "turnover_rate_20d" in df_fac.columns:
+            df_fac = df_fac[
+                (df_fac["turnover_rate_20d"] >= 0.5) & (df_fac["turnover_rate_20d"] <= 15.0)
+            ]
+
+        # ── 筹码、资金、价格、基本信息 ────────────────────────────────────
+        df_cyq = pd.read_sql(
+            "SELECT ts_code, winner_rate, chips_peak_pct FROM stock_cyq_perf WHERE trade_date = ?",
+            conn, params=(latest_cyq,)
+        )
+        df_mf = pd.read_sql(
+            "SELECT ts_code, net_mf_amount AS big_net_inflow FROM moneyflow WHERE trade_date = ?",
+            conn, params=(latest_mf,)
+        )
+        df_pr = pd.read_sql(
+            "SELECT ts_code, close, open, high, low, pct_chg FROM daily_prices WHERE trade_date = ?",
+            conn, params=(latest_pr,)
+        )
+        df_info = pd.read_sql("SELECT ts_code, name, industry, market FROM stock_list", conn)
+
+        # ── 合并 ───────────────────────────────────────────────────────────
+        df = df_fac.rename(columns={"stock_code": "ts_code"})
+        df = df.merge(df_cyq,  on="ts_code", how="inner")
+        df = df.merge(df_mf,   on="ts_code", how="inner")
+        df = df.merge(df_pr,   on="ts_code", how="inner")
+        df = df.merge(df_info, on="ts_code", how="left")
+
+        df["name"]         = df["name"].fillna("未知")
+        df["industry_raw"] = df["market"].fillna("") + " | " + df["industry"].fillna("未分类")
+        df["sub_industry"] = df["industry"].fillna("未分类")  # 细分行业（用于层三去重）
+
+        # 综合建仓评分（基于实证数据校准：左侧历史胜率采用黄金甜区机制）
+        if strategy == "right":
+            df["winner_rate_score"] = df["winner_rate"].rank(pct=True)
+            df["inflow_norm"]       = df["big_net_inflow"].rank(pct=True)
+            df["build_score"] = (
+                df["factor_score_norm"] * 0.40 +
+                df["winner_rate_score"] * 0.25 +
+                df["inflow_norm"]       * 0.25 +
+                df["pct_chg"].rank(pct=True) * 0.10
+            )
+            df = df[df["winner_rate"] >= 60.0]
+        else:
+            # 实证表明：左侧上涨组胜率均值 62.12% vs 下跌组 69.74%，过高胜率多处于透支阶段
+            # 采用以 60% 为中心的黄金蓄势钟形评分
+            wr_dist = (df["winner_rate"] - 60.0).abs()
+            df["winner_rate_score"] = (1.0 - (wr_dist / 35.0).clip(0, 1.0))
+            df["inflow_norm"]       = df["big_net_inflow"].rank(pct=True)
+            df["build_score"] = (
+                df["factor_score_norm"] * 0.45 +
+                df["winner_rate_score"] * 0.25 +
+                df["inflow_norm"]       * 0.20 +
+                (1.0 - df["pct_chg"].rank(pct=True)) * 0.10
+            )
+            df = df[(df["winner_rate"] >= 35.0) & (df["winner_rate"] <= 78.0)]
+            
+        df = df[df["big_net_inflow"] > 0]
+
+        # 取 Top N 候选池
+        df_pool = df.nlargest(top_n, "build_score").copy()
+        layer0_total = len(df_pool)
+
+        # ── 计算每支股票的 T+1 画像分 ───────────────────────────────────────
+        def safe_f(val, default=0.0):
+            if val is None:
+                return default
+            try:
+                v = float(val)
+                return default if pd.isna(v) else v
+            except:
+                return default
+
+        portrait_results = []
+        for _, row in df_pool.iterrows():
+            if strategy == "right":
+                res = compute_right_side_portrait_score(
+                    winner_rate     = safe_f(row.get("winner_rate"), 0.0),
+                    return_5d       = safe_f(row.get("return_5d"), 0.0),
+                    hot_money_score = safe_f(row.get("hot_money_score"), 0.0),
+                    inflow_norm     = safe_f(row.get("inflow_norm"), 0.0),
+                    chips_peak_pct  = safe_f(row.get("chips_peak_pct"), 0.0),
+                )
+            else:
+                res = compute_portrait_score(
+                    factor_score          = safe_f(row.get("factor_score_norm"), 0.0),
+                    profit_ratio_estimate = safe_f(row.get("profit_ratio_estimate"), 0.5),
+                    pe_ttm                = safe_f(row.get("pe_ttm"), 9999.0),
+                    hot_money_score       = safe_f(row.get("hot_money_score"), 0.5),
+                    return_5d             = safe_f(row.get("return_5d"), 0.0),
+                    chips_concentration   = safe_f(row.get("chips_peak_pct"), 0.0),
+                    volatility_60d        = safe_f(row.get("volatility_60d"), 1.4),
+                )
+            portrait_results.append(res)
+
+        # ── 获取宏观大盘题材排行进行共振加分 ─────────────────────────
+        macro_data = get_market_overview_data()
+        hot_themes = macro_data.get("hot_money_themes", [])
+        # 提取连续爆发 2~4 天的主线板块
+        target_themes = {t["sector"]: t["streak_days"] for t in hot_themes if 2 <= t["streak_days"] <= 4}
+
+        from portrait_router import _grade
+        
+        for i, (idx, row) in enumerate(df_pool.iterrows()):
+            sub_ind = row.get("sub_industry", "")
+            res = portrait_results[i]
+            
+            # 宏观题材共振加分逻辑
+            if sub_ind in target_themes:
+                streak = target_themes[sub_ind]
+                bonus = 15.0
+                new_score = min(100.0, res["portrait_score"] + bonus)
+                res["portrait_score"] = new_score
+                grade, label = _grade(new_score)
+                res["portrait_grade"] = grade
+                res["portrait_label"] = label
+                res["portrait_details"]["题材共振"] = f"🔥 +{bonus}分 ({sub_ind}连续{streak}日爆发)"
+
+        df_pool = df_pool.copy()
+        df_pool["portrait_score"]   = [r["portrait_score"]   for r in portrait_results]
+        df_pool["portrait_grade"]   = [r["portrait_grade"]   for r in portrait_results]
+        df_pool["portrait_label"]   = [r["portrait_label"]   for r in portrait_results]
+        df_pool["portrait_details"] = [r["portrait_details"] for r in portrait_results]
+
+        # ══════════════════════════════════════════════════════════════
+        # 层一：portrait_score >= 60（等级 ≥ B）
+        # ══════════════════════════════════════════════════════════════
+        mask_l1      = df_pool["portrait_score"] >= 60
+        df_l1_pass   = df_pool[mask_l1].copy()
+        df_l1_reject = df_pool[~mask_l1].copy()
+
+        # ══════════════════════════════════════════════════════════════
+        # 层二：今日涨幅过滤与 K线防骗线（严格对照实证：左侧防追高/防中位高套，右侧防烂板/高位接盘）
+        # ══════════════════════════════════════════════════════════════
+        df_l1_pass = df_l1_pass.copy()
+        df_l1_pass["upper_shadow"] = (df_l1_pass["high"] - df_l1_pass[["open", "close"]].max(axis=1)) / df_l1_pass[["open", "close"]].max(axis=1)
+
+        if strategy == "right":
+            # 右侧过滤：
+            # 1. pct_chg <= 9.5% (防烂板)
+            # 2. 上影线 <= 3.5% (防试盘失败/日内派发)
+            # 3. 20日涨幅 <= 40% (防中线绝对高位接盘)
+            mask_l2 = (df_l1_pass["pct_chg"] <= 9.5) & (df_l1_pass["upper_shadow"] <= 0.035) & (df_l1_pass["return_20d"] <= 0.40)
+            
+            def get_right_reject_reason(row):
+                if row["return_20d"] > 0.40:
+                    return f"20日涨幅 {row['return_20d']*100:.1f}% > 40% (高位接盘风险)"
+                if row["upper_shadow"] > 0.035:
+                    return f"上影线 {row['upper_shadow']*100:.1f}% > 3.5% (冲高回落防骗线)"
+                return f"今日涨幅 +{row['pct_chg']:.2f}% > 9.5% (追高/烂板风险)"
+                
+            df_l1_pass["reject_reason_l2"] = df_l1_pass.apply(get_right_reject_reason, axis=1)
+        else:
+            # 左侧过滤（基于实证数据）：
+            # 1. 今日涨幅 <= 4.5% (防日内追高)
+            # 2. 上影线 <= 3.5% (防冲高回落被套)
+            # 3. 20日涨幅 <= 25% (防中位累积涨幅过大透支)
+            mask_l2 = (df_l1_pass["pct_chg"] <= 4.5) & (df_l1_pass["upper_shadow"] <= 0.035) & (df_l1_pass["return_20d"] <= 0.25)
+            
+            def get_left_reject_reason(row):
+                if row["return_20d"] > 0.25:
+                    return f"20日涨幅 {row['return_20d']*100:.1f}% > 25% (中位透支风险)"
+                if row["upper_shadow"] > 0.035:
+                    return f"上影线 {row['upper_shadow']*100:.1f}% > 3.5% (冲高回落防骗线)"
+                return f"今日涨幅 +{row['pct_chg']:.2f}% > 4.5% (追高风险)"
+                
+            df_l1_pass["reject_reason_l2"] = df_l1_pass.apply(get_left_reject_reason, axis=1)
+
+        df_l2_pass   = df_l1_pass[mask_l2].copy()
+        df_l2_reject = df_l1_pass[~mask_l2].copy()
+
+        # ══════════════════════════════════════════════════════════════
+        # 层三：同一细分行业最多保留 portrait_score 最高的 1 支
+        # ══════════════════════════════════════════════════════════════
+        df_l2_sorted = df_l2_pass.sort_values("portrait_score", ascending=False)
+        df_l3_pass   = df_l2_sorted.drop_duplicates(subset=["sub_industry"], keep="first").copy()
+        df_l3_reject = df_l2_sorted[~df_l2_sorted.index.isin(df_l3_pass.index)].copy()
+
+        # 最终精选：按画像分排序，最多取 5 支
+        df_picks = df_l3_pass.sort_values("portrait_score", ascending=False).head(5).copy()
+        df_picks["pick_rank"] = range(1, len(df_picks) + 1)
+
+        # 建议仓位分配（按画像分加权）
+        total_ps = df_picks["portrait_score"].sum()
+        if total_ps > 0:
+            df_picks["suggested_weight"] = (df_picks["portrait_score"] / total_ps * 100).round(1)
+        else:
+            df_picks["suggested_weight"] = round(100.0 / max(len(df_picks), 1), 1)
+
+        def make_pick_reason(row):
+            """根据画像明细生成中文选股理由"""
+            parts = []
+            grade = row.get("portrait_grade", "")
+            d = row.get("portrait_details") or {}
+            if grade == "A":
+                parts.append("🔥 A级画像")
+            elif grade == "B":
+                parts.append("✅ B级画像")
+            if d.get("位置分", 0) >= 18 or d.get("突破分", 0) >= 18:
+                parts.append("上方无压" if strategy == "right" else "低位筹码")
+            if d.get("动能分", 0) >= 15:
+                parts.append("动能强劲")
+            if d.get("估值分", 0) >= 18:
+                parts.append("估值合理")
+            if d.get("温度分", 0) >= 18 or d.get("活跃分", 0) >= 15:
+                parts.append("资金活跃" if strategy == "right" else "游资未过热")
+            if d.get("筹码分", 0) >= 18 or d.get("集中分", 0) >= 15:
+                parts.append("筹码集中")
+            if d.get("因子分", 0) >= 18 or d.get("流入分", 0) >= 15:
+                parts.append("主力流入" if strategy == "right" else "因子极强")
+            return " · ".join(parts) if parts else "综合画像评分靠前"
+
+        def row_to_pick(row):
+            return {
+                "pick_rank":        int(row["pick_rank"]),
+                "ts_code":          str(row["ts_code"]),
+                "name":             str(row["name"]),
+                "industry":         str(row["industry_raw"]),
+                "sub_industry":     str(row["sub_industry"]),
+                "portrait_score":   round(safe_f(row.get("portrait_score")), 1),
+                "portrait_grade":   str(row.get("portrait_grade", "")),
+                "portrait_label":   str(row.get("portrait_label", "")),
+                "portrait_details": dict(row.get("portrait_details") or {}),
+                "pct_chg":          round(safe_f(row.get("pct_chg")), 2),
+                "close":            round(safe_f(row.get("close")), 2),
+                "build_score":      round(safe_f(row.get("build_score")) * 100, 1),
+                "factor_score":     round(safe_f(row.get("factor_score_norm")) * 100, 1),
+                "winner_rate":      round(safe_f(row.get("winner_rate")), 1),
+                "chips_peak_pct":   round(safe_f(row.get("chips_peak_pct")), 1),
+                "big_net_inflow":   round(safe_f(row.get("big_net_inflow")) / 1e4, 2),
+                "suggested_weight": round(safe_f(row.get("suggested_weight")), 1),
+                "pick_reason":      make_pick_reason(row),
+            }
+
+        def row_to_reject(row, reject_reason):
+            return {
+                "ts_code":        str(row["ts_code"]),
+                "name":           str(row["name"]),
+                "industry":       str(row["industry_raw"]),
+                "sub_industry":   str(row["sub_industry"]),
+                "portrait_score": round(safe_f(row.get("portrait_score")), 1),
+                "portrait_grade": str(row.get("portrait_grade", "")),
+                "pct_chg":        round(safe_f(row.get("pct_chg")), 2),
+                "reject_reason":  reject_reason,
+            }
+
+        picks       = [row_to_pick(r) for _, r in df_picks.iterrows()]
+        l1_rejects  = [row_to_reject(r, f"画像分 {round(safe_f(r.get('portrait_score')),1)} < 60（等级C/D·画像不符）") for _, r in df_l1_reject.iterrows()]
+        l2_rejects  = [row_to_reject(r, r.get("reject_reason_l2", "条件不符")) for _, r in df_l2_reject.iterrows()]
+        l3_rejects  = [row_to_reject(r, f"同行业「{r['sub_industry']}」已有更高分候选（行业分散原则）") for _, r in df_l3_reject.iterrows()]
+
+        return {
+            "picks": picks,
+            "funnel": {
+                "layer0_total":  layer0_total,
+                "layer1_pass":   len(df_l1_pass),
+                "layer2_pass":   len(df_l2_pass),
+                "layer3_pass":   len(df_picks),
+                "layer1_reject": l1_rejects,
+                "layer2_reject": l2_rejects,
+                "layer3_reject": l3_rejects,
+            },
+            "meta": {
+                "scan_date":     str(latest_pr),
+                "factor_date":   str(latest_fac),
+                "cyq_date":      str(latest_cyq),
+                "top_n_scanned": layer0_total,
+                "strategy":      strategy,
+            }
+        }
+
+    except Exception as e:
+        import traceback
+        import logging
+        logging.getLogger(__name__).error(f"get_portrait_position_pick error: {e}")
+        return {"picks": [], "funnel": {}, "meta": {"error": str(e), "traceback": traceback.format_exc()}}
+    finally:
+        conn.close()

@@ -5,8 +5,47 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$DIR"
 
 echo "=================================================="
-echo " 🚀 正在启动【鞋底刺刺向心底】量化策略控制台..."
+echo " 🚀 正在启动【鞋底刺 向心刺】量化策略控制台..."
 echo "=================================================="
+
+# ── 穿网隧道（cloudflared）──────────────────────────────
+TUNNEL_LOG="$DIR/.tunnel.log"
+TUNNEL_URL_FILE="$DIR/.tunnel_url"
+
+# 清空旧记录并清理可能残留的旧隧道进程
+> "$TUNNEL_LOG"
+> "$TUNNEL_URL_FILE"
+pkill -9 cloudflared 2>/dev/null || true
+
+if command -v cloudflared &> /dev/null; then
+    echo "🌐 正在申请穿网链接（cloudflare tunnel - http2模式）..."
+    # 后台启动隧道，指定 http2 规避部分运营商/代理拦截 QUIC UDP 7844 端口问题
+    cloudflared tunnel --protocol http2 --url http://localhost:5173 --no-autoupdate > "$TUNNEL_LOG" 2>&1 &
+    TUNNEL_PID=$!
+
+    # 等待最多 30 秒，直到拿到链接
+    for i in $(seq 1 30); do
+        URL=$(grep -aEo 'https://[a-zA-Z0-9._-]+\.trycloudflare\.com' "$TUNNEL_LOG" | head -1)
+        if [ -n "$URL" ]; then
+            echo "$URL" > "$TUNNEL_URL_FILE"
+            echo ""
+            echo "  ╔══════════════════════════════════════════════╗"
+            echo "  ║  🔗 穿网链接已就绪（每次重启会变）           ║"
+            echo "  ║  $URL"
+            echo "  ╚══════════════════════════════════════════════╝"
+            echo ""
+            break
+        fi
+        sleep 1
+    done
+
+    if [ ! -s "$TUNNEL_URL_FILE" ]; then
+        echo "⚠️  穿网链接获取超时，请查看 .tunnel.log"
+    fi
+else
+    echo "⚠️  未检测到 cloudflared，跳过穿网隧道"
+fi
+# ─────────────────────────────────────────────────────────
 
 # 检查是否安装了 npm (使用 npx concurrently 来同时运行前后端，日志更清晰)
 if command -v npx &> /dev/null; then
@@ -30,6 +69,6 @@ else
     FRONTEND_PID=$!
     
     # 捕获 Ctrl+C 以便干净地关闭
-    trap "kill $BACKEND_PID $FRONTEND_PID" SIGINT
+    trap "kill $BACKEND_PID $FRONTEND_PID $TUNNEL_PID" SIGINT
     wait $BACKEND_PID $FRONTEND_PID
 fi

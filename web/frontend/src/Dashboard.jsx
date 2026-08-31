@@ -1,6 +1,22 @@
 import React, { useState, useEffect } from 'react'
 import { Landmark, ArrowUpRight, ArrowDownRight, Compass, ShieldCheck, Cpu } from 'lucide-react'
 
+// 生成东方财富行情链接（对格式异常的代码做防护）
+const getEastmoneyUrl = (stockCode) => {
+  if (!stockCode || stockCode.length < 9) return '#'
+  const market = stockCode.substring(7).toLowerCase()  // 'SZ' → 'sz'
+  const code   = stockCode.substring(0, 6)
+  return `https://quote.eastmoney.com/${market}${code}.html`
+}
+
+// 画像等级样式配置（来自 T+1 上涨画像实证分析）
+const portraitGradeConfig = {
+  A: { label: 'A', emoji: '🔥', color: '#10b981', bg: 'rgba(16,185,129,0.15)', border: 'rgba(16,185,129,0.35)', title: '强烈推荐 · 符合所有T+1上涨特征' },
+  B: { label: 'B', emoji: '✅', color: '#38bdf8', bg: 'rgba(56,189,248,0.12)', border: 'rgba(56,189,248,0.30)', title: '符合画像 · 多数T+1上涨特征匹配' },
+  C: { label: 'C', emoji: '⚠️', color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.30)', title: '勉强通过 · 部分特征不匹配' },
+  D: { label: 'D', emoji: '❌', color: '#f43f5e', bg: 'rgba(244,63,94,0.12)', border: 'rgba(244,63,94,0.30)', title: '画像不符 · T+1上涨概率偏低' },
+}
+
 function Dashboard({ marketStatus }) {
   const [portfolio, setPortfolio] = useState([])
   const [loading, setLoading] = useState(true)
@@ -57,7 +73,9 @@ function Dashboard({ marketStatus }) {
   // 仿真计算持仓当日虚拟盈亏
   const isHolding = !['DARK', 'BEAR'].includes(marketStatus?.regime?.toUpperCase())
   const totalProfit = isHolding ? portfolio.reduce((acc, item) => acc + item.position_profit, 0) : 0
-  const avgChange = isHolding ? portfolio.reduce((acc, item) => acc + item.daily_change, 0) / portfolio.length : 0
+  const avgChange = isHolding && portfolio.length > 0
+    ? portfolio.reduce((acc, item) => acc + item.daily_change, 0) / portfolio.length
+    : 0
 
   return (
     <div className="space-y-6">
@@ -149,7 +167,7 @@ function Dashboard({ marketStatus }) {
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm border-collapse">
               <thead>
-                <tr className="bg-[#0E1524] text-gray-400 font-mono text-xs border-b border-[#222F4C]">
+                <tr className="bg-[#0E1524] text-gray-400 font-mono text-xs border-b border-[#222F4C] whitespace-nowrap">
                   <th className="p-4 pl-6">推荐排名</th>
                   <th className="p-4">股票代码</th>
                   <th className="p-4">股票名称</th>
@@ -163,6 +181,11 @@ function Dashboard({ marketStatus }) {
                   <th className="p-4 text-right">10日涨幅</th>
                   <th className="p-4 text-right">20日涨幅</th>
                   <th className="p-4 text-right">昨日收盘价</th>
+                  <th className="p-4 text-center">
+                    <span title="基于T+1上涨画像实证分析的5维评分：位置/估值/温度/筹码/因子，满分100分">
+                      画像等级 ⓘ
+                    </span>
+                  </th>
                   <th className="p-4 text-right pr-6">今日涨跌幅</th>
                 </tr>
               </thead>
@@ -173,10 +196,10 @@ function Dashboard({ marketStatus }) {
                   const barColor = pct >= 70 ? 'bg-emerald-500' : pct >= 40 ? 'bg-purple-500' : 'bg-amber-500'
                   return (
                     <tr key={item.stock_code} className="hover:bg-[#1A253D]/40 transition-colors">
-                      <td className="p-4 pl-6 text-gray-400 font-semibold">{item.rank}</td>
-                      <td className="p-4 font-bold">
+                      <td className="p-4 pl-6 text-gray-400 font-semibold whitespace-nowrap">{item.rank}</td>
+                      <td className="p-4 font-bold whitespace-nowrap">
                         <a 
-                          href={`http://stockpage.10jqka.com.cn/${item.stock_code.substring(0, 6)}/`} 
+                          href={getEastmoneyUrl(item.stock_code)} 
                           target="_blank" 
                           rel="noopener noreferrer"
                           className="text-indigo-400 hover:text-indigo-300 hover:underline cursor-pointer"
@@ -185,9 +208,9 @@ function Dashboard({ marketStatus }) {
                           {item.stock_code}
                         </a>
                       </td>
-                      <td className="p-4 font-sans font-semibold">
+                      <td className="p-4 font-sans font-semibold whitespace-nowrap">
                         <a 
-                          href={`http://stockpage.10jqka.com.cn/${item.stock_code.substring(0, 6)}/`} 
+                          href={getEastmoneyUrl(item.stock_code)} 
                           target="_blank" 
                           rel="noopener noreferrer"
                           className="text-gray-100 hover:text-white hover:underline cursor-pointer"
@@ -196,8 +219,8 @@ function Dashboard({ marketStatus }) {
                           {item.name}
                         </a>
                       </td>
-                      <td className="p-4 text-gray-400 font-sans">{item.industry}</td>
-                      <td className="p-4">
+                      <td className="p-4 text-gray-400 font-sans whitespace-nowrap">{item.industry}</td>
+                      <td className="p-4 whitespace-nowrap">
                         <div className="flex items-center gap-2">
                           {/* 进度条 */}
                           <div className="w-20 h-2 bg-[#0E1524] rounded-full overflow-hidden border border-[#222F4C]">
@@ -208,17 +231,55 @@ function Dashboard({ marketStatus }) {
                           </span>
                         </div>
                       </td>
-                      <td className={`p-4 text-right ${item.return_5d >= 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                      <td className={`p-4 text-right whitespace-nowrap ${item.return_5d >= 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
                         {item.return_5d > 0 ? '+' : ''}{(item.return_5d * 100).toFixed(2)}%
                       </td>
-                      <td className={`p-4 text-right ${item.return_10d >= 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                      <td className={`p-4 text-right whitespace-nowrap ${item.return_10d >= 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
                         {item.return_10d > 0 ? '+' : ''}{(item.return_10d * 100).toFixed(2)}%
                       </td>
-                      <td className={`p-4 text-right ${item.return_20d >= 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                      <td className={`p-4 text-right whitespace-nowrap ${item.return_20d >= 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
                         {item.return_20d > 0 ? '+' : ''}{(item.return_20d * 100).toFixed(2)}%
                       </td>
-                      <td className="p-4 text-right text-gray-300">{item.close_price.toFixed(2)} 元</td>
-                      <td className={`p-4 text-right pr-6 font-bold ${item.daily_change >= 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                      <td className="p-4 text-right text-gray-300 whitespace-nowrap">{item.close_price.toFixed(2)} 元</td>
+                      {/* ── 画像等级徽章 ── */}
+                      <td className="p-4 text-center whitespace-nowrap">
+                        {item.portrait_grade && item.portrait_grade !== '—' ? (() => {
+                          const cfg = portraitGradeConfig[item.portrait_grade] || portraitGradeConfig['C']
+                          // 构建 tooltip 内容（5维明细）
+                          const details = item.portrait_details || {}
+                          const detailText = Object.entries(details)
+                            .map(([k, v]) => `${k}: ${v}分`)
+                            .join(' | ')
+                          const tooltipTitle = `${cfg.title}\n画像总分: ${item.portrait_score}分\n${detailText}`
+                          return (
+                            <span
+                              title={tooltipTitle}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                padding: '3px 10px',
+                                borderRadius: '999px',
+                                fontSize: '11px',
+                                fontWeight: 700,
+                                fontFamily: 'monospace',
+                                color: cfg.color,
+                                background: cfg.bg,
+                                border: `1px solid ${cfg.border}`,
+                                cursor: 'help',
+                                letterSpacing: '0.05em',
+                              }}
+                            >
+                              <span>{cfg.emoji}</span>
+                              <span>{cfg.label}</span>
+                              <span style={{ opacity: 0.7, fontSize: '10px' }}>{item.portrait_score}</span>
+                            </span>
+                          )
+                        })() : (
+                          <span style={{ color: '#4b5563', fontSize: '11px', fontFamily: 'monospace' }}>—</span>
+                        )}
+                      </td>
+                      <td className={`p-4 text-right pr-6 font-bold whitespace-nowrap ${item.daily_change >= 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
                         {item.daily_change > 0 ? '+' : ''}{(item.daily_change * 100).toFixed(2)}%
                       </td>
                     </tr>

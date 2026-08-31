@@ -12,3 +12,5 @@ node_modules/
 .vscode/
 .DS_Store
 archives/
+.tunnel.log
+.tunnel_url

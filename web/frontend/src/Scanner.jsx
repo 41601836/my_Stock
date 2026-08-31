@@ -248,7 +248,7 @@ function Scanner() {
             <div className="overflow-x-auto rounded-2xl border border-[#222F4C] bg-[#151D30]/60">
               <table className="w-full text-sm border-collapse">
                 <thead>
-                  <tr className="bg-[#0E1524] text-gray-400 font-mono text-xs border-b border-[#222F4C]">
+                  <tr className="bg-[#0E1524] text-gray-400 font-mono text-xs border-b border-[#222F4C] whitespace-nowrap">
                     <th className="p-3 pl-5 text-left">排名</th>
                     <th className="p-3 text-left">代码 / 名称</th>
                     <th className="p-3 text-left">行业</th>
@@ -268,35 +268,46 @@ function Scanner() {
                       onClick={() => setSelected(selected === s.rank ? null : s.rank)}
                       className={`cursor-pointer transition-colors ${selected === s.rank ? 'bg-purple-900/20 border-l-2 border-purple-500' : 'hover:bg-[#1A253D]/40'}`}
                     >
-                      <td className="p-3 pl-5">
+                      <td className="p-3 pl-5 whitespace-nowrap">
                         <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
                           s.rank <= 3 ? 'bg-purple-500/25 text-purple-300 border border-purple-500/40' : 'text-gray-500'
                         }`}>{s.rank}</span>
                       </td>
-                      <td className="p-3">
+                      <td className="p-3 whitespace-nowrap">
                         <a
-                          href={`http://stockpage.10jqka.com.cn/${s.ts_code.substring(0, 6)}/`}
+                          href={`http://quote.eastmoney.com/${s.ts_code.substring(7, 9).toLowerCase()}${s.ts_code.substring(0, 6)}.html`}
                           target="_blank"
                           rel="noopener noreferrer"
                           onClick={(e) => e.stopPropagation()}
                           className="hover:underline cursor-pointer flex flex-col"
-                          title="在同花顺查看该股票详情"
+                          title="在东方财富查看该股票详情"
                         >
                           <div className="font-bold text-gray-200 text-xs hover:text-indigo-300">{s.ts_code}</div>
                           <div className="text-gray-100 font-sans font-semibold hover:text-indigo-400">{s.name}</div>
+                          {s.stats && (
+                            <div className="flex items-center gap-1 mt-1">
+                              {s.stats.consecutive_days > 1 && (
+                                <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-orange-500/20 text-orange-400 border border-orange-500/30 whitespace-nowrap">连 {s.stats.consecutive_days} 天</span>
+                              )}
+                              {s.stats.ever_top_3 && (
+                                <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-fuchsia-500/20 text-fuchsia-400 border border-fuchsia-500/30 whitespace-nowrap">曾前三</span>
+                              )}
+                              <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-blue-500/20 text-blue-400 border border-blue-500/30 whitespace-nowrap">荐 {s.stats.total_recommends} 次</span>
+                            </div>
+                          )}
                         </a>
                       </td>
-                      <td className="p-3 text-gray-400 font-sans text-xs">{s.industry}</td>
-                      <td className="p-3 text-right"><PctChg value={s.pct_chg} /></td>
-                      <td className="p-3">
-                        <div className="flex flex-col gap-1">
+                      <td className="p-3 text-gray-400 font-sans text-xs whitespace-nowrap">{s.industry}</td>
+                      <td className="p-3 text-right whitespace-nowrap"><PctChg value={s.pct_chg} /></td>
+                      <td className="p-3 whitespace-nowrap">
+                        <div className="flex flex-col gap-1 items-start">
                           <ScoreBar value={s.build_score} />
                           <BuildGrade score={s.build_score} />
                         </div>
                       </td>
-                      <td className="p-3 text-right font-bold text-sky-400">{s.mvo_weight !== undefined ? `${s.mvo_weight}%` : '均权'}</td>
-                      <td className="p-3 text-right text-gray-300">{s.close.toFixed(2)} 元</td>
-                      <td className="p-3 pr-5 text-right">
+                      <td className="p-3 text-right font-bold text-sky-400 whitespace-nowrap">{s.mvo_weight !== undefined ? `${s.mvo_weight}%` : '均权'}</td>
+                      <td className="p-3 text-right text-gray-300 whitespace-nowrap">{s.close.toFixed(2)} 元</td>
+                      <td className="p-3 pr-5 text-right whitespace-nowrap">
                         <span className={`font-bold text-xs ${s.big_net_inflow > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
                           {s.big_net_inflow > 0 ? '+' : ''}{s.big_net_inflow.toFixed(2)} 亿
                         </span>
@@ -340,6 +351,24 @@ function Scanner() {
 
               {/* 5维指标详情 */}
               <div className="space-y-3">
+                {selectedStock.stats && (
+                  <div className="flex flex-wrap gap-2 mb-2 pb-3 border-b border-[#1A253D]">
+                    <div className="px-2 py-1 rounded bg-[#0E1524] border border-[#222F4C] text-xs font-mono">
+                      <span className="text-gray-500 mr-1">总推荐:</span>
+                      <span className="text-blue-400 font-bold">{selectedStock.stats.total_recommends} 次</span>
+                    </div>
+                    <div className="px-2 py-1 rounded bg-[#0E1524] border border-[#222F4C] text-xs font-mono">
+                      <span className="text-gray-500 mr-1">近期连续:</span>
+                      <span className="text-orange-400 font-bold">{selectedStock.stats.consecutive_days} 天</span>
+                    </div>
+                    <div className="px-2 py-1 rounded bg-[#0E1524] border border-[#222F4C] text-xs font-mono">
+                      <span className="text-gray-500 mr-1">高光时刻:</span>
+                      <span className={selectedStock.stats.ever_top_3 ? "text-fuchsia-400 font-bold" : "text-gray-400"}>
+                        {selectedStock.stats.ever_top_3 ? "曾入前三" : "未进前三"}
+                      </span>
+                    </div>
+                  </div>
+                )}
                 <div className="text-xs text-gray-500 font-mono uppercase tracking-widest">信号详情</div>
 
                 {[

@@ -2,6 +2,14 @@ import React, { useState, useEffect } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import { CheckCircle2, AlertTriangle, Play, RefreshCw, BarChart2, ShieldCheck, HelpCircle } from 'lucide-react'
 
+// 生成东方财富行情链接（对格式异常的代码做防护）
+const getEastmoneyUrl = (stockCode) => {
+  if (!stockCode || stockCode.length < 9) return '#'
+  const market = stockCode.substring(7).toLowerCase()  // 'SZ' → 'sz'
+  const code   = stockCode.substring(0, 6)
+  return `https://quote.eastmoney.com/${market}${code}.html`
+}
+
 export default function Diagnosis() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -194,7 +202,7 @@ export default function Diagnosis() {
         <div className="overflow-x-auto max-h-[400px]">
           <table className="w-full text-left border-collapse font-mono text-xs">
             <thead>
-              <tr className="border-b border-gray-800 text-gray-500 font-bold bg-slate-900/50">
+              <tr className="border-b border-gray-800 text-gray-400 font-bold bg-slate-900/50">
                 <th className="py-2.5 px-3">推荐日期</th>
                 <th className="py-2.5 px-3">代码/名称</th>
                 <th className="py-2.5 px-3">基准价(开盘)</th>
@@ -203,34 +211,73 @@ export default function Diagnosis() {
                 <th className="py-2.5 px-3 text-right">筹码胜率</th>
                 <th className="py-2.5 px-3 text-right">筹码集中</th>
                 <th className="py-2.5 px-3 text-right">主力流入</th>
-                <th className="py-2.5 px-3 text-right text-emerald-400">5D 绝对</th>
-                <th className="py-2.5 px-3 text-right text-purple-400 font-bold">5D 超额 (Alpha)</th>
+                <th className="py-2.5 px-3 text-right">5D 绝对</th>
+                <th className="py-2.5 px-3 text-right font-bold">5D 超额 (Alpha)</th>
               </tr>
             </thead>
             <tbody>
               {data?.details?.length > 0 ? (
-                data.details.map((d, i) => (
-                  <tr key={i} className="border-b border-gray-900 hover:bg-[#1c2336]/40 transition-colors text-gray-300">
-                    <td className="py-2.5 px-3 text-gray-500">{d.recommend_date}</td>
-                    <td className="py-2.5 px-3 font-semibold text-gray-200">
-                      <div>{d.ts_code}</div>
-                      <div className="text-[10px] text-gray-500">{d.name} | {d.industry.split(' | ')[1] || d.industry}</div>
-                    </td>
-                    <td className="py-2.5 px-3 text-gray-400">{d.base_price !== null ? `${d.base_price.toFixed(2)}元` : '未结算'}</td>
-                    <td className="py-2.5 px-3 text-center">
-                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                        d.regime === 'BULL' ? 'bg-emerald-500/10 text-emerald-400' :
-                        d.regime === 'RANGE' ? 'bg-sky-500/10 text-sky-400' : 'bg-rose-500/10 text-rose-400'
-                      }`}>{d.regime}</span>
-                    </td>
-                    <td className="py-2.5 px-3 text-right">{d.factor_score}%</td>
-                    <td className="py-2.5 px-3 text-right">{d.winner_rate}%</td>
-                    <td className="py-2.5 px-3 text-right">{d.chips_concentration}%</td>
-                    <td className="py-2.5 px-3 text-right text-gray-400">{d.net_mf_amount > 0 ? `+${d.net_mf_amount}` : d.net_mf_amount}万</td>
-                    <td className="py-2.5 px-3 text-right text-emerald-500">{formatPercent(d.ret_5d)}</td>
-                    <td className="py-2.5 px-3 text-right text-purple-400 font-bold">{formatPercent(d.alpha_5d)}</td>
-                  </tr>
-                ))
+                data.details.map((d, i) => {
+                  const eastmoneyUrl = getEastmoneyUrl(d.ts_code)
+                  const ret5d = d.ret_5d
+                  const alpha5d = d.alpha_5d
+                  const netMf = d.net_mf_amount
+
+                  // A股红涨绿跌色彩规则
+                  const ret5dColor = ret5d > 0 ? 'text-rose-400' : ret5d < 0 ? 'text-emerald-400' : 'text-gray-500'
+                  const alpha5dColor = alpha5d > 0 ? 'text-rose-400' : alpha5d < 0 ? 'text-emerald-400' : 'text-gray-500'
+                  const netMfColor = netMf > 0 ? 'text-rose-400' : netMf < 0 ? 'text-emerald-400' : 'text-gray-400'
+
+                  return (
+                    <tr key={i} className="border-b border-gray-900 hover:bg-[#1c2336]/40 transition-colors text-gray-300">
+                      <td className="py-2.5 px-3 text-gray-500">{d.recommend_date}</td>
+                      <td className="py-2.5 px-3 font-semibold">
+                        <div>
+                          <a 
+                            href={eastmoneyUrl} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-indigo-400 hover:text-indigo-300 hover:underline cursor-pointer"
+                            title="在东方财富网查看该股票行情与K线"
+                          >
+                            {d.ts_code}
+                          </a>
+                        </div>
+                        <div className="text-[10px] text-gray-400">
+                          <a 
+                            href={eastmoneyUrl} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-gray-200 hover:text-white hover:underline cursor-pointer"
+                            title="在东方财富网查看该股票行情与K线"
+                          >
+                            {d.name}
+                          </a>
+                          <span className="text-gray-500 ml-1">| {d.industry.split(' | ')[1] || d.industry}</span>
+                        </div>
+                      </td>
+                      <td className="py-2.5 px-3 text-gray-400">{d.base_price !== null ? `${d.base_price.toFixed(2)}元` : '未结算'}</td>
+                      <td className="py-2.5 px-3 text-center">
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                          d.regime === 'BULL' ? 'bg-emerald-500/10 text-emerald-400' :
+                          d.regime === 'RANGE' ? 'bg-sky-500/10 text-sky-400' : 'bg-rose-500/10 text-rose-400'
+                        }`}>{d.regime}</span>
+                      </td>
+                      <td className="py-2.5 px-3 text-right">{d.factor_score}%</td>
+                      <td className="py-2.5 px-3 text-right">{d.winner_rate}%</td>
+                      <td className="py-2.5 px-3 text-right">{d.chips_concentration}%</td>
+                      <td className={`py-2.5 px-3 text-right font-medium ${netMfColor}`}>
+                        {netMf > 0 ? `+${netMf}` : netMf}万
+                      </td>
+                      <td className={`py-2.5 px-3 text-right font-bold ${ret5dColor}`}>
+                        {formatPercent(ret5d)}
+                      </td>
+                      <td className={`py-2.5 px-3 text-right font-bold ${alpha5dColor}`}>
+                        {formatPercent(alpha5d)}
+                      </td>
+                    </tr>
+                  )
+                })
               ) : (
                 <tr>
                   <td colSpan="10" className="py-8 text-center text-gray-600">暂无追踪记录，推荐生成并日终结算后在此展现。</td>

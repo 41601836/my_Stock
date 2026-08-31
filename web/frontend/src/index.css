@@ -5,6 +5,9 @@
 @layer base {
   body {
     @apply bg-[#0B0F19] text-gray-100 font-sans antialiased;
+    /* 兼容刘海屏安全区域 */
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
   }
 }
 
@@ -36,4 +39,122 @@
     transform: scale(0.98);
     opacity: 0.95;
   }
+}
+
+/* ── 全局视图缩放包装器 ─────────────────────────────────────── */
+#zoom-root {
+  transform-origin: top left;
+  width: 100vw;
+  min-height: 100vh;
+  transition: transform 0.15s ease;
+}
+
+/* ── 暂浮缩放控制器（玻璃拟态胶囊风格）─────────────────────── */
+.zoom-fab {
+  position: fixed;
+  right: 14px;
+  bottom: 74px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  background: linear-gradient(160deg, rgba(30, 35, 60, 0.96), rgba(16, 20, 40, 0.96));
+  border: 1px solid rgba(139, 92, 246, 0.35);
+  border-radius: 22px;
+  padding: 5px;
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(255,255,255,0.04) inset,
+    0 2px 4px rgba(139,92,246,0.15);
+}
+
+.zoom-fab button {
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 17px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+.zoom-fab button:first-child {
+  color: #a78bfa;
+  font-size: 20px;
+  font-weight: 300;
+  line-height: 1;
+}
+
+.zoom-fab button:last-child {
+  color: #a78bfa;
+  font-size: 20px;
+  font-weight: 300;
+  line-height: 1;
+}
+
+.zoom-fab button:active {
+  background: rgba(139, 92, 246, 0.2);
+  transform: scale(0.88);
+}
+
+.zoom-fab button:hover {
+  background: rgba(139, 92, 246, 0.12);
+}
+
+/* 分隔线 */
+.zoom-fab-divider {
+  width: 22px;
+  height: 1px;
+  background: rgba(255,255,255,0.07);
+  margin: 1px 0;
+}
+
+/* 百分比显示按钮特化 */
+.zoom-fab .zoom-pct {
+  width: 34px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  font-family: 'SF Mono', 'JetBrains Mono', monospace;
+  color: #c4b5fd;
+  letter-spacing: -0.5px;
+  border-radius: 12px;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  transition: background 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.zoom-fab .zoom-pct:active {
+  background: rgba(139, 92, 246, 0.18);
+}
+
+/* 桌面端隐藏暂浮缩放控制器 */
+@media (min-width: 768px) {
+  .zoom-fab {
+    display: none;
+  }
+}
+
+/* ── 底部 Tab 栏安全区域适配（刘海屏） ──────────────────────── */
+.mobile-tab-bar {
+  padding-bottom: env(safe-area-inset-bottom);
+  height: calc(56px + env(safe-area-inset-bottom));
+}
+
+/* 内容区留底部安全距离 */
+.content-safe-bottom {
+  padding-bottom: calc(80px + env(safe-area-inset-bottom));
 }

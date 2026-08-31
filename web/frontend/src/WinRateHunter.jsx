@@ -1,6 +1,14 @@
 import React, { useState, useEffect } from 'react'
 import { Rocket, History, RefreshCw, Crosshair, Terminal } from 'lucide-react'
 
+// 生成东方财富行情链接（对格式异常的代码做防护）
+const getEastmoneyUrl = (stockCode) => {
+  if (!stockCode || stockCode.length < 9) return '#'
+  const market = stockCode.substring(7).toLowerCase()
+  const code   = stockCode.substring(0, 6)
+  return `https://quote.eastmoney.com/${market}${code}.html`
+}
+
 export default function WinRateHunter({ upsertToast, removeToast, pollTask }) {
   const [params, setParams] = useState({
     start: '20260101',
@@ -152,7 +160,7 @@ export default function WinRateHunter({ upsertToast, removeToast, pollTask }) {
                           <td className="px-4 py-3 font-mono text-emerald-400 font-bold">#{s.rank}</td>
                           <td className="px-4 py-3 font-mono">
                             <a 
-                              href={`http://stockpage.10jqka.com.cn/${s.stock_code.substring(0, 6)}/`} 
+                              href={getEastmoneyUrl(s.stock_code)} 
                               target="_blank" 
                               rel="noopener noreferrer"
                               className="text-indigo-400 hover:text-indigo-300 hover:underline cursor-pointer"
@@ -163,7 +171,7 @@ export default function WinRateHunter({ upsertToast, removeToast, pollTask }) {
                           </td>
                           <td className="px-4 py-3 font-bold">
                             <a 
-                              href={`http://stockpage.10jqka.com.cn/${s.stock_code.substring(0, 6)}/`} 
+                              href={getEastmoneyUrl(s.stock_code)} 
                               target="_blank" 
                               rel="noopener noreferrer"
                               className="text-white hover:text-indigo-200 hover:underline cursor-pointer"

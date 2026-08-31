@@ -1,0 +1,135 @@
+{
+    "run_mode": "quick",
+    "run_date": "20260830",
+    "validation_summary": {
+        "total_monitored": 10,
+        "active_count": 10,
+        "detailed_validation": {
+            "pb": {
+                "factor": "pb",
+                "baseline_ic": 0.0,
+                "recent_ic": -0.009838626357685313,
+                "decay_ratio": 1.0,
+                "status": "INVALID",
+                "reason": "历史基准 IC 绝对值过小，属低效因子"
+            },
+            "return_5d": {
+                "factor": "return_5d",
+                "baseline_ic": 0.0,
+                "recent_ic": -0.055335139449366556,
+                "decay_ratio": 1.0,
+                "status": "INVALID",
+                "reason": "历史基准 IC 绝对值过小，属低效因子"
+            },
+            "north_net_inflow_ratio": {
+                "factor": "north_net_inflow_ratio",
+                "baseline_ic": 0.0,
+                "recent_ic": -0.016614472972778474,
+                "decay_ratio": 1.0,
+                "status": "INVALID",
+                "reason": "历史基准 IC 绝对值过小，属低效因子"
+            },
+            "volatility_20d": {
+                "factor": "volatility_20d",
+                "baseline_ic": 0.0,
+                "recent_ic": -0.01317801769928379,
+                "decay_ratio": 1.0,
+                "status": "INVALID",
+                "reason": "历史基准 IC 绝对值过小，属低效因子"
+            },
+            "turnover_rate_20d": {
+                "factor": "turnover_rate_20d",
+                "baseline_ic": 0.0,
+                "recent_ic": -0.02902048943535251,
+                "decay_ratio": 1.0,
+                "status": "INVALID",
+                "reason": "历史基准 IC 绝对值过小，属低效因子"
+            },
+            "turnover_rate": {
+                "factor": "turnover_rate",
+                "baseline_ic": 0.0,
+                "recent_ic": -0.0404072213068012,
+                "decay_ratio": 1.0,
+                "status": "INVALID",
+                "reason": "历史基准 IC 绝对值过小，属低效因子"
+            },
+            "volatility_10d": {
+                "factor": "volatility_10d",
+                "baseline_ic": 0.0,
+                "recent_ic": 0.004768938291922223,
+                "decay_ratio": 1.0,
+                "status": "INVALID",
+                "reason": "历史基准 IC 绝对值过小，属低效因子"
+            },
+            "volatility_60d": {
+                "factor": "volatility_60d",
+                "baseline_ic": 0.0,
+                "recent_ic": -0.002633890174440355,
+                "decay_ratio": 1.0,
+                "status": "INVALID",
+                "reason": "历史基准 IC 绝对值过小，属低效因子"
+            },
+            "volatility_120d": {
+                "factor": "volatility_120d",
+                "baseline_ic": 0.0,
+                "recent_ic": 0.00392733248631405,
+                "decay_ratio": 1.0,
+                "status": "INVALID",
+                "reason": "历史基准 IC 绝对值过小，属低效因子"
+            },
+            "skewness_20d": {
+                "factor": "skewness_20d",
+                "baseline_ic": 0.0,
+                "recent_ic": -0.05626148635269113,
+                "decay_ratio": 1.0,
+                "status": "INVALID",
+                "reason": "历史基准 IC 绝对值过小，属低效因子"
+            }
+        }
+    },
+    "recommendation_summary": {
+        "decision_status": "RETAIN_ORIGINAL_COMBINATION",
+        "decision_message": "Quick 模式仅做基础超额回测验证。",
+        "old_portfolio": {
+            "factors": [
+                "pb",
+                "return_5d",
+                "north_net_inflow_ratio",
+                "volatility_20d",
+                "turnover_rate_20d",
+                "turnover_rate",
+                "volatility_10d",
+                "volatility_60d",
+                "volatility_120d",
+                "skewness_20d"
+            ],
+            "weights": {
+                "pb": 0.1,
+                "return_5d": 0.1,
+                "north_net_inflow_ratio": 0.1,
+                "volatility_20d": 0.1,
+                "turnover_rate_20d": 0.1,
+                "turnover_rate": 0.1,
+                "volatility_10d": 0.1,
+                "volatility_60d": 0.1,
+                "volatility_120d": 0.1,
+                "skewness_20d": 0.1
+            },
+            "metrics": {
+                "total_return": -0.028828772222175836,
+                "annualized_return": -0.029385655074219863,
+                "annualized_volatility": 0.21078546405178047,
+                "max_drawdown": -0.25682336125966415,
+                "calmar_ratio": -0.11441971217139069,
+                "excess_total_return": -0.7048634645842842,
+                "excess_annual_return": -0.711841610359196,
+                "excess_annual_volatility": 0.970393053929904,
+                "excess_max_drawdown": -0.7246447504798882,
+                "excess_calmar_ratio": -0.9823318389980561,
+                "win_rate": 0.47058823529411764,
+                "excess_win_rate": 0.3333333333333333,
+                "weeks": 51
+            }
+        }
+    }
+}

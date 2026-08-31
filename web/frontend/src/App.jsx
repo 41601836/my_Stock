@@ -1,17 +1,20 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom'
-import { LayoutDashboard, TrendingUp, BarChart3, Terminal, Activity, Wifi, ShieldAlert, Download, ScanSearch, CheckCircle2, Loader2, XCircle, X, Crosshair, RefreshCw, Zap, Globe, Menu, ChevronDown, ChevronUp } from 'lucide-react'
+import { LayoutDashboard, TrendingUp, BarChart3, Terminal, Activity, Wifi, ShieldAlert, Download, ScanSearch, CheckCircle2, Loader2, XCircle, X, Crosshair, RefreshCw, Zap, Globe, Menu, ChevronDown, ChevronUp, Target } from 'lucide-react'
 import Dashboard from './Dashboard'
 import Performance from './Performance'
 import Factors from './Factors'
 import Logs from './Logs'
 import JackMode from './JackMode'
 import Scanner from './Scanner'
+import ScanHistory from './ScanHistory'
 import WinRateHunter from './WinRateHunter'
 import StrategySelector from './StrategySelector'
 import Diagnosis from './Diagnosis'
 import Diagnose from './Diagnose'
 import Overview from './Overview'
+import PortraitAnalysis from './PortraitAnalysis'
+import PositionPick from './PositionPick'
 
 // ── Toast 通知组件 ─────────────────────────────────────────────────
 const TOAST_STYLES = {
@@ -57,6 +60,30 @@ function App() {
   // 手机端操作菜单折叠状态
   const [actionsOpen, setActionsOpen] = useState(false)
   const [visitorStats, setVisitorStats] = useState(null)
+
+  // ── 全局缩放级别（手机端专用，持久化到 localStorage）──────────
+  const ZOOM_STEP = 0.1
+  const ZOOM_MIN  = 0.6
+  const ZOOM_MAX  = 1.5
+  const [zoomLevel, setZoomLevel] = useState(() => {
+    const saved = parseFloat(localStorage.getItem('ui_zoom') || '1.0')
+    return isNaN(saved) ? 1.0 : Math.min(Math.max(saved, ZOOM_MIN), ZOOM_MAX)
+  })
+
+  // 同步缩放到 #zoom-root DOM 元素
+  useEffect(() => {
+    const el = document.getElementById('zoom-root')
+    if (!el) return
+    el.style.transform = `scale(${zoomLevel})`
+    // 同步调整宽高，防止缩小后出现空白
+    el.style.width = `${(100 / zoomLevel).toFixed(4)}vw`
+    el.style.minHeight = `${(100 / zoomLevel).toFixed(4)}vh`
+    localStorage.setItem('ui_zoom', String(zoomLevel))
+  }, [zoomLevel])
+
+  const zoomIn  = () => setZoomLevel(v => parseFloat(Math.min(v + ZOOM_STEP, ZOOM_MAX).toFixed(2)))
+  const zoomOut = () => setZoomLevel(v => parseFloat(Math.max(v - ZOOM_STEP, ZOOM_MIN).toFixed(2)))
+  const zoomReset = () => setZoomLevel(1.0)
 
   const [toasts, setToasts] = useState([])
   const intervals = useRef({})
@@ -150,6 +177,11 @@ function App() {
       const res = await fetch('/api/run-fetch', { method: 'POST' })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
+      if (data.status === 'busy') {
+        upsertToast(toastId, 'error', `${data.message}`)
+        setTimeout(() => removeToast(toastId), 6000)
+        return
+      }
       upsertToast(toastId, 'pending', `📡 ${data.message}`)
       pollTask(toastId, data.task_id)
     } catch (e) {
@@ -172,6 +204,11 @@ function App() {
       const res = await fetch('/api/run-scan', { method: 'POST' })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
+      if (data.status === 'busy') {
+        upsertToast(toastId, 'error', `${data.message}`)
+        setTimeout(() => removeToast(toastId), 6000)
+        return
+      }
       upsertToast(toastId, 'pending', `🔍 ${data.message}`)
       pollTask(toastId, data.task_id)
     } catch (e) {
@@ -188,6 +225,11 @@ function App() {
       const res = await fetch('/api/run-backtest', { method: 'POST' })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
+      if (data.status === 'busy') {
+        upsertToast(toastId, 'error', `${data.message}`)
+        setTimeout(() => removeToast(toastId), 6000)
+        return
+      }
       upsertToast(toastId, 'pending', `📊 ${data.message}`)
       pollTask(toastId, data.task_id)
     } catch (e) {
@@ -212,16 +254,19 @@ function App() {
   const handleNav = (path) => { navigate(path); setSidebarOpen(false) }
 
   const navItems = [
-    { id: '/overview',    label: '市场宏观全览',   Icon: Globe },
-    { id: '/',           label: '核心策略仪表盘', Icon: LayoutDashboard },
-    { id: '/performance',label: '周度绩效时序',   Icon: TrendingUp },
-    { id: '/factors',    label: '因子自适应权重', Icon: BarChart3 },
-    { id: '/jack',       label: '游资策略模拟',   Icon: Zap },
-    { id: '/scanner',    label: '建仓机会扫描',   Icon: Crosshair },
-    { id: '/diagnose',   label: '诊股看盘',       Icon: ScanSearch },
-    { id: '/diagnosis',  label: '建仓逻辑诊断',   Icon: Activity },
-    { id: '/logs',       label: 'Agent 进化日志', Icon: Terminal },
-    { id: '/hunter',     label: '胜率猎手优化器', Icon: Crosshair },
+    { id: '/overview',      label: '市场宏观全览',   Icon: Globe },
+    { id: '/',             label: '核心策略仪表盘', Icon: LayoutDashboard },
+    { id: '/performance',  label: '周度绩效时序',   Icon: TrendingUp },
+    { id: '/factors',      label: '因子自适应权重', Icon: BarChart3 },
+    { id: '/portrait',       label: 'T+1 画像分析',   Icon: Target },
+    { id: '/position-pick',  label: '🎯 画像建仓决策', Icon: Crosshair },
+    { id: '/jack',         label: '游资策略模拟',   Icon: Zap },
+    { id: '/scanner',      label: '建仓机会扫描',   Icon: Crosshair },
+    { id: '/scan-history', label: '扫描历史追踪',   Icon: Activity },
+    { id: '/diagnose',     label: '诊股看盘',       Icon: ScanSearch },
+    { id: '/diagnosis',    label: '建仓逻辑诊断',   Icon: Activity },
+    { id: '/logs',         label: 'Agent 进化日志', Icon: Terminal },
+    { id: '/hunter',       label: '胜率猎手优化器', Icon: Crosshair },
   ]
 
   // 手机底部 Tab 只展示核心 5 项
@@ -235,6 +280,8 @@ function App() {
   const pageTitle = {
     overview: '市场宏观全览', dashboard: '策略实时仪表盘',
     performance: '多轨回测绩效曲线', factors: '因子自适应权重监控',
+    portrait: 'T+1 上涨画像分析',
+    'position-pick': '🎯 T+1 画像建仓决策',
     jack: '游资策略模拟', scanner: '建仓机会实时扫描',
     diagnose: '诊股看盘', diagnosis: '建仓策略归因诊断',
     logs: 'Agent 进化巡航监控', hunter: '胜率猎手进化引擎',
@@ -249,7 +296,7 @@ function App() {
             <Activity className="h-5 w-5 text-purple-400" />
           </div>
           <div>
-            <h1 className="text-base font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-indigo-300">鞋底刺刺向心底</h1>
+            <h1 className="text-base font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-indigo-300">鞋底刺 向心刺</h1>
             <span className="text-xs text-gray-500 font-mono">策略控制台 v2.0</span>
           </div>
         </div>
@@ -392,7 +439,7 @@ function App() {
         </header>
 
         {/* 内容区：手机底部为 Tab 栏留出空间 */}
-        <div className="flex-1 overflow-y-auto p-3 md:p-8 pb-20 md:pb-8">
+        <div className="content-safe-bottom flex-1 overflow-y-auto p-3 md:p-8 md:pb-8">
           {loading ? (
             <div className="flex items-center justify-center h-full">
               <div className="flex flex-col items-center gap-4 text-gray-500">
@@ -406,8 +453,11 @@ function App() {
               <Route path="/" element={<Dashboard marketStatus={marketStatus} />} />
               <Route path="/performance" element={<Performance />} />
               <Route path="/factors" element={<Factors />} />
+              <Route path="/portrait" element={<PortraitAnalysis />} />
+              <Route path="/position-pick" element={<PositionPick />} />
               <Route path="/jack" element={<JackMode />} />
               <Route path="/scanner" element={<Scanner />} />
+              <Route path="/scan-history" element={<ScanHistory />} />
               <Route path="/diagnose" element={<Diagnose />} />
               <Route path="/diagnosis" element={<Diagnosis />} />
               <Route path="/logs" element={<Logs />} />
@@ -417,8 +467,24 @@ function App() {
         </div>
       </main>
 
+      {/* ─── 手机端悬浮缩放控制器（仅手机可见，桌面由 CSS 隐藏）── */}
+      <div className="zoom-fab">
+        {/* 放大按钮 */}
+        <button onClick={zoomIn} title="放大" aria-label="放大">＋</button>
+        {/* 分隔线 */}
+        <div className="zoom-fab-divider" />
+        {/* 百分比（点击重置） */}
+        <button className="zoom-pct" onClick={zoomReset} title="点击重置" aria-label="重置缩放">
+          {Math.round(zoomLevel * 100)}%
+        </button>
+        {/* 分隔线 */}
+        <div className="zoom-fab-divider" />
+        {/* 缩小按钮 */}
+        <button onClick={zoomOut} title="缩小" aria-label="缩小">－</button>
+      </div>
+
       {/* ─── 手机端底部 Tab 导航栏 ────────────────────────────── */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-[#111827]/95 backdrop-blur-md border-t border-[#1F2937] flex items-stretch" style={{ height: '56px' }}>
+      <nav className="mobile-tab-bar md:hidden fixed bottom-0 left-0 right-0 z-30 bg-[#111827]/95 backdrop-blur-md border-t border-[#1F2937] flex items-stretch">
         {mobileNavItems.map(({ id, label, Icon }) => {
           const isActive = location.pathname === id
           return (

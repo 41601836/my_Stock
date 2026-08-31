@@ -84,7 +84,7 @@ export default function Overview() {
         fetch('/api/market/overview'),
         fetch('/api/market/regime-dashboard')
       ])
-      if (!res1.ok || !res2.ok) throw new Error('Failed to fetch market data')
+      if (!res1.ok || !res2.ok) throw new Error('获取市场行情全览数据失败，请检查后台服务连接')
       setData(await res1.json())
       setRegimeData(await res2.json())
       setError(null)
@@ -158,8 +158,8 @@ export default function Overview() {
         </button>
       </div>
 
-      {/* 第一行：4 核心指标卡 */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      {/* 第一行：4 核心指标卡（手机单列、sm双列、桌面四列） */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
 
         {/* 赚钱效应 */}
         <div style={card(null, '#f43f5e')}>
@@ -248,9 +248,9 @@ export default function Overview() {
         {/* 策略参数 */}
         <div style={card(null, '#a78bfa')}>
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: 'linear-gradient(90deg, transparent, #a78bfa60, transparent)' }} />
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 10, color: '#8b949e', fontFamily: 'monospace', letterSpacing: '0.05em' }}>策略引擎参数  CONFIG</span>
-            <span style={{ fontSize: 9, padding: '2px 8px', borderRadius: 20, background: 'rgba(167,139,250,0.15)', border: '1px solid rgba(167,139,250,0.35)', color: '#a78bfa', fontFamily: 'monospace' }}>LIVE</span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 10, color: '#8b949e', fontFamily: 'monospace', letterSpacing: '0.05em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>策略引擎参数  CONFIG</span>
+            <span style={{ fontSize: 9, padding: '2px 8px', borderRadius: 20, background: 'rgba(167,139,250,0.15)', border: '1px solid rgba(167,139,250,0.35)', color: '#a78bfa', fontFamily: 'monospace', flexShrink: 0 }}>LIVE</span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 7, flex: 1 }}>
             {[
@@ -259,9 +259,9 @@ export default function Overview() {
               { k: '风险模型', v: 'MVO Ledoit-Wolf' },
               { k: '行业上限', v: '30% / 60%' },
             ].map(({ k, v }) => (
-              <div key={k} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', borderRadius: 8, background: 'rgba(167,139,250,0.04)', border: '1px solid rgba(167,139,250,0.1)' }}>
-                <span style={{ fontSize: 10, color: '#6e7681', fontFamily: 'monospace' }}>{k}</span>
-                <span style={{ fontSize: 10, color: '#a78bfa', fontFamily: 'monospace', fontWeight: 700 }}>{v}</span>
+              <div key={k} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', borderRadius: 8, background: 'rgba(167,139,250,0.04)', border: '1px solid rgba(167,139,250,0.1)', gap: 8 }}>
+                <span style={{ fontSize: 10, color: '#6e7681', fontFamily: 'monospace', flexShrink: 0 }}>{k}</span>
+                <span style={{ fontSize: 10, color: '#a78bfa', fontFamily: 'monospace', fontWeight: 700, whiteSpace: 'nowrap', textAlign: 'right' }}>{v}</span>
               </div>
             ))}
           </div>
@@ -275,18 +275,18 @@ export default function Overview() {
       {regimeData && !regimeData.error && (
         <div style={{ background: 'linear-gradient(135deg, #0d1117 0%, #161b22 100%)', border: '1px solid #21262d', borderRadius: 16, padding: '22px 24px', position: 'relative', overflow: 'hidden' }}>
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: `linear-gradient(90deg, transparent, ${regCfg.color}60, transparent)` }} />
-          <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Activity size={15} color={regCfg.color} />
-                <span style={{ fontSize: 13, fontWeight: 700, color: '#e6edf3' }}>底层路由触发条件诊断</span>
-                <span style={{ fontSize: 10, color: '#4b5563', fontFamily: 'monospace' }}>REGIME TRIGGERS</span>
-              </div>
-              <p style={{ fontSize: 11, color: '#6e7681', marginTop: 4 }}>为什么是 {regime}？实时监测大盘波动率、回撤及上涨动能</p>
+          {/* 标题区域：竖排，避免手机挤压 */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+              <Activity size={15} color={regCfg.color} style={{ flexShrink: 0 }} />
+              <span style={{ fontSize: 13, fontWeight: 700, color: '#e6edf3', whiteSpace: 'nowrap' }}>底层路由触发条件诊断</span>
+              <span style={{ fontSize: 10, color: '#4b5563', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>REGIME TRIGGERS</span>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <p style={{ fontSize: 11, color: '#6e7681', marginTop: 0, marginBottom: 10 }}>为什么是 {regime}？实时监测大盘波动率、回撤及上涨动能</p>
+            {/* 触发徽章单独一行，可换行 */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {regimeData.triggers?.map((t, i) => (
-                <div key={i} style={{ padding: '4px 10px', borderRadius: 6, background: `rgba(244,63,94,0.1)`, border: `1px solid rgba(244,63,94,0.3)`, color: '#f43f5e', fontSize: 10, fontFamily: 'monospace' }}>
+                <div key={i} style={{ padding: '4px 10px', borderRadius: 6, background: `rgba(244,63,94,0.1)`, border: `1px solid rgba(244,63,94,0.3)`, color: '#f43f5e', fontSize: 10, fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
                   🚨 触发: {t.name} ({t.value})
                 </div>
               ))}
@@ -298,7 +298,7 @@ export default function Overview() {
             </div>
           </div>
           
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
             {[
               { label: '近20日收益率', val: regimeData.indicators.return_20d + '%', threshold: `Bull >5% / Bear <-3%`, status: regimeData.indicators.return_20d > 5 ? 'good' : regimeData.indicators.return_20d < -3 ? 'bad' : 'normal' },
               { label: '近5日最大回撤', val: regimeData.indicators.mdd_5d + '%', threshold: `Dark < -5%`, status: regimeData.indicators.mdd_5d < -5 ? 'bad' : 'normal' },
@@ -306,7 +306,7 @@ export default function Overview() {
               { label: '上涨家数占比', val: regimeData.indicators.up_ratio + '%', threshold: `Dark < 30%`, status: regimeData.indicators.up_ratio < 30 ? 'bad' : 'normal' },
               { label: '周度绩效诊断', val: regimeData.indicators.return_5d + '%', threshold: `Dark < -4.5%`, status: regimeData.indicators.return_5d < -4.5 ? 'bad' : 'normal' },
             ].map((idx, i) => {
-              const colorMap = { good: '#10b981', bad: '#f43f5e', normal: '#a78bfa' }
+              const colorMap = { good: '#f43f5e', bad: '#10b981', normal: '#a78bfa' }
               const c = colorMap[idx.status]
               return (
                 <div key={i} style={{ padding: '12px 14px', borderRadius: 10, background: '#0d1117', border: '1px solid #21262d', display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -379,7 +379,7 @@ export default function Overview() {
         </div>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           {data?.hot_money_themes?.length > 0 ? data.hot_money_themes.map((item, i) => {
-            const rankColors = ['#f59e0b', '#94a3b8', '#b45309', '#6b7280', '#6b7280']
+            const rankColors = ['#f59e0b', '#94a3b8', '#b45309', '#6b7280', '#6b7280', '#6b7280', '#6b7280', '#6b7280', '#6b7280', '#6b7280']
             const rc = rankColors[i] || '#6b7280'
             // 连续天数信号颜色映射
             const sigColorMap = {
@@ -416,8 +416,8 @@ export default function Overview() {
                     <span style={{ color: '#e6edf3', fontWeight: 700 }}>{item.avg_turnover}%</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, fontFamily: 'monospace' }}>
-                    <span style={{ color: '#6e7681' }}>净买入</span>
-                    <span style={{ color: '#f87171', fontWeight: 700 }}>+{item.net_inflow} 亿</span>
+                    <span style={{ color: '#6e7681' }}>成交额</span>
+                    <span style={{ color: '#f87171', fontWeight: 700 }}>{item.total_amount} 亿</span>
                   </div>
                 </div>
                 {/* 热度进度条 */}
@@ -438,64 +438,214 @@ export default function Overview() {
         </div>
       </div>
 
-      {/* 第四行：资金流榜 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* 净流入 */}
-        <div style={{ background: 'linear-gradient(135deg, #0d1117 0%, #0d1a12 100%)', border: '1px solid #1a3024', borderRadius: 16, padding: '20px 22px', position: 'relative', overflow: 'hidden' }}>
-          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: 'linear-gradient(90deg, transparent, #f43f5e60, transparent)' }} />
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-            <ArrowUpRight size={14} color="#f43f5e" />
-            <span style={{ fontSize: 12, fontWeight: 700, color: '#e6edf3' }}>大资金净流入 TOP 5</span>
-            <span style={{ fontSize: 10, color: '#4b5563', fontFamily: 'monospace' }}>INFLOW</span>
+      
+      {/* 第四行：机构强庄控盘题材 */}
+      <div style={{ background: 'linear-gradient(135deg, #0d1117 0%, #0d1a12 100%)', border: '1px solid #1a3024', borderRadius: 16, padding: '22px 24px', position: 'relative', overflow: 'hidden', marginTop: '16px' }}>
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: 'linear-gradient(90deg, transparent, #10b98180, transparent)' }} />
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: '#e6edf3' }}>今日机构强庄控盘排行</span>
+            <span style={{ fontSize: 10, color: '#4b5563', fontFamily: 'monospace' }}>INSTITUTION THEMES</span>
           </div>
-          <p style={{ fontSize: 10, color: '#6e7681', marginBottom: 16 }}>主力大买方向 — 优先跟进上榜题材的个股</p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {data?.inflow_rank?.length > 0 ? data.inflow_rank.map((item, i) => (
-              <div key={i}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <span 
-                    onClick={() => fetchThemeStocks(item.sector, 'desc')}
-                    style={{ fontSize: 11, fontFamily: 'monospace', color: '#e6edf3', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: 2, textDecorationColor: '#f43f5e' }}
-                  >
-                    {item.sector}
-                  </span>
-                  <span style={{ fontSize: 11, fontFamily: 'monospace', color: '#f43f5e', fontWeight: 700 }}>+{item.flow_value} 亿</span>
-                </div>
-                <div style={{ height: 5, borderRadius: 3, background: '#0d2018', overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${(Math.abs(item.flow_value)/maxFlow*100).toFixed(1)}%`, borderRadius: 3, background: 'linear-gradient(90deg, #9f1239, #f43f5e)', boxShadow: '0 0 6px rgba(244,63,94,0.3)', transition: 'width 0.8s ease' }} />
-                </div>
-              </div>
-            )) : <div style={{ color: '#4b5563', fontSize: 11, fontFamily: 'monospace', padding: '20px 0', textAlign: 'center' }}>暂无数据</div>}
-          </div>
+          <p style={{ fontSize: 11, color: '#6e7681', marginTop: 4 }}>筹码高度密集，机构重仓长线锁仓方向</p>
         </div>
-
-        {/* 净流出 */}
-        <div style={{ background: 'linear-gradient(135deg, #0d1117 0%, #1a0d0d 100%)', border: '1px solid #301a1a', borderRadius: 16, padding: '20px 22px', position: 'relative', overflow: 'hidden' }}>
-          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: 'linear-gradient(90deg, transparent, #10b98160, transparent)' }} />
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-            <ArrowDownRight size={14} color="#10b981" />
-            <span style={{ fontSize: 12, fontWeight: 700, color: '#e6edf3' }}>大资金净流出 TOP 5</span>
-            <span style={{ fontSize: 10, color: '#4b5563', fontFamily: 'monospace' }}>OUTFLOW</span>
-          </div>
-          <p style={{ fontSize: 10, color: '#6e7681', marginBottom: 16 }}>主力出货方向 — 上榜题材反弹勿追，防阴跌</p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {data?.outflow_rank?.length > 0 ? data.outflow_rank.map((item, i) => (
-              <div key={i}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <span 
-                    onClick={() => fetchThemeStocks(item.sector, 'asc')}
-                    style={{ fontSize: 11, fontFamily: 'monospace', color: '#e6edf3', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: 2, textDecorationColor: '#10b981' }}
-                  >
-                    {item.sector}
-                  </span>
-                  <span style={{ fontSize: 11, fontFamily: 'monospace', color: '#10b981', fontWeight: 700 }}>{item.flow_value} 亿</span>
+        
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          {data?.inst_themes?.length > 0 ? data.inst_themes.map((item, i) => {
+            const isResonantHot = data?.hot_money_themes?.some(t => t.sector === item.sector)
+            const isResonantMain = data?.main_cap_themes?.some(t => t.sector === item.sector)
+            const rankColors = ['#10b981', '#059669', '#047857', '#065f46', '#064e3b', '#6b7280', '#6b7280', '#6b7280', '#6b7280', '#6b7280']
+            const rc = rankColors[i] || '#6b7280'
+            const sigColorMap = {
+              gray: { color: '#6b7280', bg: 'rgba(107,114,128,0.12)', border: 'rgba(107,114,128,0.3)' },
+              yellow: { color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.3)' },
+              green: { color: '#10b981', bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.3)' },
+              orange: { color: '#f97316', bg: 'rgba(249,115,22,0.12)', border: 'rgba(249,115,22,0.3)' },
+              red: { color: '#f43f5e', bg: 'rgba(244,63,94,0.12)', border: 'rgba(244,63,94,0.3)' },
+            }
+            const sc = sigColorMap[item.signal_color] || sigColorMap.gray
+            
+            return (
+              <div 
+                key={i} 
+                onClick={() => fetchThemeStocks(item.sector, 'desc')}
+                style={{ background: 'rgba(16,185,129,0.04)', border: `1px solid rgba(16,185,129,${0.15 - i * 0.02})`, borderRadius: 12, padding: '14px', display: 'flex', flexDirection: 'column', gap: 8, position: 'relative', overflow: 'hidden', cursor: 'pointer', transition: 'all 0.2s ease', ...(selectedTheme === item.sector ? { background: 'rgba(16,185,129,0.1)', borderColor: 'rgba(16,185,129,0.5)', boxShadow: '0 0 15px rgba(16,185,129,0.2)' } : {}) }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(16,185,129,0.08)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = selectedTheme === item.sector ? 'rgba(16,185,129,0.1)' : 'rgba(16,185,129,0.04)' }}
+              >
+                {/* 排名勋章 */}
+                <div style={{ position: 'absolute', top: 8, right: 8, width: 20, height: 20, borderRadius: '50%', background: `${rc}20`, border: `1px solid ${rc}50`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <span style={{ fontSize: 9, fontWeight: 800, color: rc, fontFamily: 'monospace' }}>#{i+1}</span>
                 </div>
-                <div style={{ height: 5, borderRadius: 3, background: '#200d0d', overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${(Math.abs(item.flow_value)/maxFlow*100).toFixed(1)}%`, borderRadius: 3, background: 'linear-gradient(90deg, #047857, #10b981)', boxShadow: '0 0 6px rgba(16,185,129,0.3)', transition: 'width 0.8s ease' }} />
+                
+                {/* 题材名称 */}
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#e6edf3', paddingRight: 28, lineHeight: 1.3 }} title={item.sector}>
+                  {item.sector}
+                </div>
+                
+                {/* 连续天数 + 操盘信号 */}
+                <div style={{ padding: '5px 8px', borderRadius: 6, background: sc.bg, border: `1px solid ${sc.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: 9, color: sc.color, fontFamily: 'monospace', fontWeight: 700 }}>💎 连续 {item.streak_days ?? 1} 天</span>
+                  <span style={{ fontSize: 8, color: sc.color, fontFamily: 'monospace', opacity: 0.85 }}>{item.signal}</span>
+                </div>
+                
+                {/* 共振标签 */}
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {isResonantHot && (
+                    <span style={{ fontSize: 9, background: 'rgba(192,132,252,0.15)', color: '#c084fc', padding: '2px 6px', borderRadius: 4, fontWeight: 700, border: '1px solid rgba(192,132,252,0.3)' }}>
+                      🔥 游资共振
+                    </span>
+                  )}
+                  {isResonantMain && (
+                    <span style={{ fontSize: 9, background: 'rgba(244,63,94,0.15)', color: '#f43f5e', padding: '2px 6px', borderRadius: 4, fontWeight: 700, border: '1px solid rgba(244,63,94,0.3)' }}>
+                      💛 主力共振
+                    </span>
+                  )}
+                </div>
+                
+                {/* 核心指标 */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, fontFamily: 'monospace' }}>
+                    <span style={{ color: '#6e7681' }}>锁仓度</span>
+                    <span style={{ color: '#10b981', fontWeight: 700 }}>{item.chips_peak}%</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, fontFamily: 'monospace' }}>
+                    <span style={{ color: '#6e7681' }}>净流入</span>
+                    <span style={{ color: item.net_inflow > 0 ? '#f43f5e' : item.net_inflow < 0 ? '#10b981' : '#e6edf3', fontWeight: 700 }}>{item.net_inflow > 0 ? `+${item.net_inflow}` : item.net_inflow} 亿</span>
+                  </div>
+                </div>
+                
+                {/* 强度进度条 */}
+                <div>
+                  <div style={{ height: 4, borderRadius: 3, background: '#0d2018', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${item.chips_peak}%`, borderRadius: 3, background: 'linear-gradient(90deg, #059669, #10b981)', boxShadow: '0 0 6px rgba(16,185,129,0.4)', transition: 'width 1s ease' }} />
+                  </div>
                 </div>
               </div>
-            )) : <div style={{ color: '#4b5563', fontSize: 11, fontFamily: 'monospace', padding: '20px 0', textAlign: 'center' }}>暂无数据</div>}
+            )
+          }) : (
+            <div style={{ gridColumn: '1/-1', textAlign: 'center', color: '#4b5563', fontSize: 12, fontFamily: 'monospace', padding: '32px 0' }}>暂无机构控盘排行</div>
+          )}
+        </div>
+      </div>
+
+
+      {/* 第五行：主力大资金扫货题材 */}
+      <div style={{ background: 'linear-gradient(135deg, #0d1117 0%, #150a0a 100%)', border: '1px solid #3e1b1b', borderRadius: 16, padding: '22px 24px', position: 'relative', overflow: 'hidden', marginTop: '16px' }}>
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: 'linear-gradient(90deg, transparent, #f43f5e80, transparent)' }} />
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: '#e6edf3' }}>今日主力扫货题材排行</span>
+            <span style={{ fontSize: 10, color: '#4b5563', fontFamily: 'monospace' }}>MAIN CAPITAL THEMES</span>
           </div>
+          <p style={{ fontSize: 11, color: '#6e7681', marginTop: 4 }}>单日大单狂买方向，如果持续天数长说明主力持续建仓</p>
+        </div>
+        
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          {data?.main_cap_themes?.length > 0 ? data.main_cap_themes.map((item, i) => {
+            const isResonantHot = data?.hot_money_themes?.some(t => t.sector === item.sector)
+            const isResonantInst = data?.inst_themes?.some(t => t.sector === item.sector)
+            const rankColors = ['#f43f5e', '#e11d48', '#be123c', '#9f1239', '#881337', '#6b7280', '#6b7280', '#6b7280', '#6b7280', '#6b7280']
+            const rc = rankColors[i] || '#6b7280'
+            const sigColorMap = {
+              gray: { color: '#6b7280', bg: 'rgba(107,114,128,0.12)', border: 'rgba(107,114,128,0.3)' },
+              yellow: { color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.3)' },
+              green: { color: '#10b981', bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.3)' },
+              orange: { color: '#f97316', bg: 'rgba(249,115,22,0.12)', border: 'rgba(249,115,22,0.3)' },
+              red: { color: '#f43f5e', bg: 'rgba(244,63,94,0.12)', border: 'rgba(244,63,94,0.3)' },
+            }
+            const sc = sigColorMap[item.signal_color] || sigColorMap.gray
+            
+            return (
+              <div 
+                key={i} 
+                onClick={() => fetchThemeStocks(item.sector, 'desc')}
+                style={{ background: 'rgba(244,63,94,0.04)', border: `1px solid rgba(244,63,94,${0.15 - i * 0.02})`, borderRadius: 12, padding: '14px', display: 'flex', flexDirection: 'column', gap: 8, position: 'relative', overflow: 'hidden', cursor: 'pointer', transition: 'all 0.2s ease', ...(selectedTheme === item.sector ? { background: 'rgba(244,63,94,0.1)', borderColor: 'rgba(244,63,94,0.5)', boxShadow: '0 0 15px rgba(244,63,94,0.2)' } : {}) }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(244,63,94,0.08)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = selectedTheme === item.sector ? 'rgba(244,63,94,0.1)' : 'rgba(244,63,94,0.04)' }}
+              >
+                {/* 排名勋章 */}
+                <div style={{ position: 'absolute', top: 8, right: 8, width: 20, height: 20, borderRadius: '50%', background: `${rc}20`, border: `1px solid ${rc}50`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <span style={{ fontSize: 9, fontWeight: 800, color: rc, fontFamily: 'monospace' }}>#{i+1}</span>
+                </div>
+                
+                {/* 题材名称 */}
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#e6edf3', paddingRight: 28, lineHeight: 1.3 }} title={item.sector}>
+                  {item.sector}
+                </div>
+
+                {/* 连续天数 + 操盘信号 */}
+                <div style={{ padding: '5px 8px', borderRadius: 6, background: sc.bg, border: `1px solid ${sc.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: 9, color: sc.color, fontFamily: 'monospace', fontWeight: 700 }}>💛 连续 {item.streak_days ?? 1} 天</span>
+                  <span style={{ fontSize: 8, color: sc.color, fontFamily: 'monospace', opacity: 0.85 }}>{item.signal}</span>
+                </div>
+                
+                {/* 共振标签 */}
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {isResonantHot && (
+                    <span style={{ fontSize: 9, background: 'rgba(192,132,252,0.15)', color: '#c084fc', padding: '2px 6px', borderRadius: 4, fontWeight: 700, border: '1px solid rgba(192,132,252,0.3)' }}>
+                      🔥 游资共振
+                    </span>
+                  )}
+                  {isResonantInst && (
+                    <span style={{ fontSize: 9, background: 'rgba(16,185,129,0.15)', color: '#10b981', padding: '2px 6px', borderRadius: 4, fontWeight: 700, border: '1px solid rgba(16,185,129,0.3)' }}>
+                      💎 机构共振
+                    </span>
+                  )}
+                </div>
+                
+                {/* 核心指标 */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, fontFamily: 'monospace' }}>
+                    <span style={{ color: '#6e7681' }}>绝对净流入</span>
+                    <span style={{ color: item.net_inflow > 0 ? '#f43f5e' : item.net_inflow < 0 ? '#10b981' : '#e6edf3', fontWeight: 700 }}>{item.net_inflow > 0 ? `+${item.net_inflow}` : item.net_inflow} 亿</span>
+                  </div>
+                </div>
+                
+                {/* 强度进度条 */}
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: '#6e7681', fontFamily: 'monospace', marginBottom: 4 }}>
+                    <span>流入占比</span>
+                    <span style={{ color: '#f43f5e', fontWeight: 700 }}>{item.inflow_ratio}%</span>
+                  </div>
+                  <div style={{ height: 4, borderRadius: 3, background: '#1a1013', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${item.inflow_ratio}%`, borderRadius: 3, background: 'linear-gradient(90deg, #be123c, #f43f5e)', boxShadow: '0 0 6px rgba(244,63,94,0.4)', transition: 'width 1s ease' }} />
+                  </div>
+                </div>
+              </div>
+            )
+          }) : (
+            <div style={{ gridColumn: '1/-1', textAlign: 'center', color: '#4b5563', fontSize: 12, fontFamily: 'monospace', padding: '32px 0' }}>暂无资金扫货排行</div>
+          )}
+        </div>
+      </div>
+
+      {/* 第五行：主力出货警戒线 */}
+      <div style={{ background: 'linear-gradient(135deg, #0d1117 0%, #1a0d0d 100%)', border: '1px solid #301a1a', borderRadius: 16, padding: '20px 22px', position: 'relative', overflow: 'hidden', marginTop: '16px' }}>
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: 'linear-gradient(90deg, transparent, #10b98160, transparent)' }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+          <ArrowDownRight size={14} color="#10b981" />
+          <span style={{ fontSize: 12, fontWeight: 700, color: '#e6edf3' }}>大资金净流出 TOP 10</span>
+          <span style={{ fontSize: 10, color: '#4b5563', fontFamily: 'monospace' }}>OUTFLOW</span>
+        </div>
+        <p style={{ fontSize: 10, color: '#6e7681', marginBottom: 16 }}>主力出货方向 — 上榜题材反弹勿追，防阴跌</p>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-x-8 gap-y-4">
+          {data?.outflow_rank?.length > 0 ? data.outflow_rank.map((item, i) => (
+            <div key={i}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                <span 
+                  onClick={() => fetchThemeStocks(item.sector, 'asc')}
+                  style={{ fontSize: 11, fontFamily: 'monospace', color: '#e6edf3', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: 2, textDecorationColor: '#10b981' }}
+                >
+                  {i+1}. {item.sector}
+                </span>
+                <span style={{ fontSize: 11, fontFamily: 'monospace', color: '#10b981', fontWeight: 700 }}>{item.flow_value} 亿</span>
+              </div>
+              <div style={{ height: 4, borderRadius: 3, background: '#200d0d', overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${(Math.abs(item.flow_value)/maxFlow*100).toFixed(1)}%`, borderRadius: 3, background: 'linear-gradient(90deg, #047857, #10b981)', boxShadow: '0 0 6px rgba(16,185,129,0.3)', transition: 'width 0.8s ease' }} />
+              </div>
+            </div>
+          )) : <div style={{ color: '#4b5563', fontSize: 11, fontFamily: 'monospace', padding: '20px 0', textAlign: 'center' }}>暂无数据</div>}
         </div>
       </div>
 
@@ -526,22 +676,34 @@ export default function Overview() {
                       <span style={{ fontSize: 12, color: '#8b949e', fontFamily: 'monospace', width: 24 }}>{i+1}.</span>
                       <div>
                         <a 
-                          href={`http://stockpage.10jqka.com.cn/${s.ts_code.substring(0, 6)}/`} 
+                          href={`https://quote.eastmoney.com/${s.ts_code.substring(7).toLowerCase()}${s.ts_code.substring(0, 6)}.html`} 
                           target="_blank" 
                           rel="noopener noreferrer"
                           style={{ textDecoration: 'none', cursor: 'pointer' }}
-                          title="在同花顺查看该股票详情"
+                          title="在东方财富查看该股票详情"
                         >
-                          <div style={{ fontSize: 14, fontWeight: 700, color: '#e6edf3' }} className="hover:text-indigo-400">{s.name}</div>
-                          <div style={{ fontSize: 10, color: '#6e7681', fontFamily: 'monospace', marginTop: 2 }} className="hover:text-indigo-300">{s.ts_code}</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <div style={{ fontSize: 14, fontWeight: 700, color: '#e6edf3' }} className="hover:text-indigo-400">{s.name}</div>
+                            {s.market && <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 4, background: 'rgba(167,139,250,0.12)', color: '#a78bfa', fontFamily: 'monospace', border: '1px solid rgba(167,139,250,0.25)' }}>{s.market}</span>}
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
+                            <div style={{ fontSize: 10, color: '#6e7681', fontFamily: 'monospace' }} className="hover:text-indigo-300">{s.ts_code}</div>
+                            {s.industry && s.industry !== '--' && <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 4, background: 'rgba(34,211,238,0.08)', color: '#22d3ee', fontFamily: 'monospace', border: '1px solid rgba(34,211,238,0.2)' }}>{s.industry}</span>}
+                          </div>
                         </a>
                       </div>
                     </div>
-                    <div style={{ display: 'flex', gap: 24, textAlign: 'right' }}>
+                    <div style={{ display: 'flex', gap: 20, textAlign: 'right' }}>
                       <div>
                         <div style={{ fontSize: 10, color: '#6e7681', fontFamily: 'monospace', marginBottom: 2 }}>涨跌幅</div>
                         <div style={{ fontSize: 13, fontWeight: 700, color: s.pct_chg > 0 ? '#f43f5e' : s.pct_chg < 0 ? '#10b981' : '#e6edf3', fontFamily: 'monospace' }}>
                           {s.pct_chg > 0 ? '+' : ''}{s.pct_chg}%
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 10, color: '#6e7681', fontFamily: 'monospace', marginBottom: 2 }}>近5日</div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: (s.pct_chg_5d ?? 0) > 0 ? '#f43f5e' : (s.pct_chg_5d ?? 0) < 0 ? '#10b981' : '#e6edf3', fontFamily: 'monospace' }}>
+                          {(s.pct_chg_5d ?? 0) > 0 ? '+' : ''}{s.pct_chg_5d ?? 0}%
                         </div>
                       </div>
                       <div>
@@ -578,10 +740,14 @@ export default function Overview() {
             </button>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
               <TrendingUp size={20} color="#a78bfa" />
-              <h3 style={{ margin: 0, fontSize: 18, color: '#e6edf3', fontFamily: 'monospace' }}>
-                {styleStocksData?.date} <span style={{ fontSize: 14, color: '#a78bfa', fontWeight: 700, marginLeft: 8 }}>{styleStocksData?.style}</span> 
-                <span style={{ fontSize: 12, color: '#8b949e', fontWeight: 400, marginLeft: 8 }}>支撑个股明细 (Top 20)</span>
-              </h3>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, color: '#8b949e', fontFamily: 'monospace', marginBottom: 2 }}>
+                  {styleStocksData?.date} · 支撑个股明细 (Top 20)
+                </div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: '#a78bfa', fontFamily: 'monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {styleStocksData?.style}
+                </div>
+              </div>
             </div>
             
             {loadingStyleStocks ? (
@@ -609,32 +775,48 @@ export default function Overview() {
                   }
                   
                   return (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: 'rgba(255,255,255,0.03)', border: '1px solid #21262d', borderRadius: 10 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                        <span style={{ fontSize: 12, color: '#8b949e', fontFamily: 'monospace', width: 24 }}>{i+1}.</span>
-                        <div>
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'rgba(255,255,255,0.03)', border: '1px solid #21262d', borderRadius: 10, gap: 8 }}>
+                      {/* 左侧：序号 + 名称信息 */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
+                        <span style={{ fontSize: 11, color: '#6e7681', fontFamily: 'monospace', width: 20, flexShrink: 0, textAlign: 'right' }}>{i+1}.</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
                           <a 
-                            href={`http://stockpage.10jqka.com.cn/${String(s.ts_code || '').substring(0, 6)}/`} 
+                            href={`https://quote.eastmoney.com/${String(s.ts_code || '').substring(7).toLowerCase()}${String(s.ts_code || '').substring(0, 6)}.html`} 
                             target="_blank" 
                             rel="noopener noreferrer"
-                            style={{ textDecoration: 'none', cursor: 'pointer' }}
-                            title="在同花顺查看该股票详情"
+                            style={{ textDecoration: 'none', cursor: 'pointer', display: 'block' }}
+                            title="在东方财富查看该股票详情"
                           >
-                            <div style={{ fontSize: 14, fontWeight: 700, color: '#e6edf3' }} className="hover:text-indigo-400">{s.name}</div>
-                            <div style={{ fontSize: 10, color: '#6e7681', fontFamily: 'monospace', marginTop: 2 }} className="hover:text-indigo-300">{s.ts_code}</div>
+                            {/* 第一行：名称 + 市场标签 */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'nowrap', minWidth: 0 }}>
+                              <div style={{ fontSize: 14, fontWeight: 700, color: '#e6edf3', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, minWidth: 0 }}>{s.name}</div>
+                              {s.market && <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 4, background: 'rgba(167,139,250,0.12)', color: '#a78bfa', fontFamily: 'monospace', border: '1px solid rgba(167,139,250,0.25)', whiteSpace: 'nowrap', flexShrink: 0 }}>{s.market}</span>}
+                            </div>
+                            {/* 第二行：代码 + 行业标签 */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 3, flexWrap: 'nowrap', minWidth: 0 }}>
+                              <div style={{ fontSize: 10, color: '#6e7681', fontFamily: 'monospace', whiteSpace: 'nowrap', flexShrink: 0 }}>{s.ts_code}</div>
+                              {s.industry && s.industry !== '--' && <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 4, background: 'rgba(34,211,238,0.08)', color: '#22d3ee', fontFamily: 'monospace', border: '1px solid rgba(34,211,238,0.2)', whiteSpace: 'nowrap', flexShrink: 0 }}>{s.industry.length > 5 ? s.industry.slice(0, 5) + '…' : s.industry}</span>}
+                            </div>
                           </a>
                         </div>
                       </div>
-                      <div style={{ display: 'flex', gap: 24, textAlign: 'right' }}>
+                      {/* 右侧：数据指标 */}
+                      <div style={{ display: 'flex', gap: 12, textAlign: 'right', flexShrink: 0 }}>
                         <div>
-                          <div style={{ fontSize: 10, color: '#6e7681', fontFamily: 'monospace', marginBottom: 2 }}>涨跌幅</div>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: s.pct_chg > 0 ? '#f43f5e' : s.pct_chg < 0 ? '#10b981' : '#e6edf3', fontFamily: 'monospace' }}>
+                          <div style={{ fontSize: 9, color: '#6e7681', fontFamily: 'monospace', marginBottom: 2, whiteSpace: 'nowrap' }}>涨跌幅</div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: s.pct_chg > 0 ? '#f43f5e' : s.pct_chg < 0 ? '#10b981' : '#e6edf3', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
                             {s.pct_chg > 0 ? '+' : ''}{s.pct_chg}%
                           </div>
                         </div>
-                        <div style={{ width: 70 }}>
-                          <div style={{ fontSize: 10, color: '#6e7681', fontFamily: 'monospace', marginBottom: 2 }}>{metricLabel}</div>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: metricColor, fontFamily: 'monospace' }}>
+                        <div>
+                          <div style={{ fontSize: 9, color: '#6e7681', fontFamily: 'monospace', marginBottom: 2, whiteSpace: 'nowrap' }}>近5日</div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: (s.pct_chg_5d ?? 0) > 0 ? '#f43f5e' : (s.pct_chg_5d ?? 0) < 0 ? '#10b981' : '#e6edf3', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
+                            {(s.pct_chg_5d ?? 0) > 0 ? '+' : ''}{s.pct_chg_5d ?? 0}%
+                          </div>
+                        </div>
+                        <div style={{ minWidth: 52 }}>
+                          <div style={{ fontSize: 9, color: '#6e7681', fontFamily: 'monospace', marginBottom: 2, whiteSpace: 'nowrap' }}>{metricLabel}</div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: metricColor, fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
                             {metricValue}
                           </div>
                         </div>

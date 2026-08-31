@@ -1,6 +1,102 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Activity, Search, Shield, ChevronDown, CheckCircle, AlertTriangle, Crosshair, Target, BarChart3 } from 'lucide-react'
+import { Activity, Search, Shield, ChevronDown, CheckCircle, AlertTriangle, Crosshair, Target, BarChart3, Info, TrendingDown, Zap } from 'lucide-react'
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts'
+
+// ── 策略元信息：描述每个策略的选股哲学和反向因子 ──────────────────────────
+const STRATEGY_META = {
+  current: {
+    icon: '⚡',
+    title: '当前主路由策略（自动适配牛熊）',
+    philosophy: '根据市场状态自动切换牛市/震荡策略。当前策略由后台实时判断，优先寻找筹码结构健康、主力持续介入、尚未大幅拉升的「潜力股」。',
+    reversedNote: [],
+    color: 'indigo',
+  },
+  base_bull: {
+    icon: '🐂',
+    title: '经典牛市多头策略',
+    philosophy: '牛市中寻找趋势加速、换手活跃、动量持续的强势品种。高涨幅、高换手是加分项，适合追强。',
+    reversedNote: [],
+    color: 'emerald',
+  },
+  base_range: {
+    icon: '🐻',
+    title: '经典震荡防御策略',
+    philosophy: '震荡市中寻找低波动、筹码锁定、抗跌性强的品种。波动大、换手高均为扣分项，适合防御性持仓。',
+    reversedNote: [
+      { factor: '20日波动', reason: '波动越大，持仓风险越高，在震荡策略中是惩罚项。' },
+      { factor: '20日换手', reason: '换手过频意味着筹码不稳定，主力尚未完成建仓。' },
+    ],
+    color: 'amber',
+  },
+  scanner: {
+    icon: '🎯',
+    title: '5维因子+筹码+主力扫描策略',
+    philosophy: '专为「挖掘尚未启动的潜伏股」设计：寻找筹码胜率高、主力悄悄流入、但今日还没大涨的股票。今日已涨停 = 已经错过最佳入场时机，因此是扣分项，而非加分项。',
+    reversedNote: [
+      { factor: '涨跌幅', reason: '已涨停/大涨说明行情已兑现，追高风险极大。该策略偏好"还没涨"的标的，+10% 反而是最大扣分项，这是刻意设计的防追板逻辑。' },
+      { factor: '综合因子', reason: '综合因子权重中包含「短期涨幅惩罚」——5日或20日已大涨的股票，短线风险释放不充分，模型评分会偏低。' },
+    ],
+    color: 'violet',
+  },
+}
+
+// 获取策略元信息（含自定义策略兜底）
+const getStrategyMeta = (key) => {
+  return STRATEGY_META[key] || {
+    icon: '🧬',
+    title: `自定义策略：${(key || '').replace('.yaml', '')}`,
+    philosophy: '使用自定义 YAML 因子组合进行评估，具体权重和逻辑以策略文件为准。因子方向（正向/反向）以文件配置为准。',
+    reversedNote: [],
+    color: 'cyan',
+  }
+}
+
+// 颜色映射表
+const COLOR_MAP = {
+  indigo: { border: 'border-indigo-500/25', bg: 'bg-indigo-500/5', badge: 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30', text: 'text-indigo-300' },
+  emerald: { border: 'border-emerald-500/25', bg: 'bg-emerald-500/5', badge: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30', text: 'text-emerald-300' },
+  amber: { border: 'border-amber-500/25', bg: 'bg-amber-500/5', badge: 'bg-amber-500/15 text-amber-300 border-amber-500/30', text: 'text-amber-300' },
+  violet: { border: 'border-violet-500/25', bg: 'bg-violet-500/5', badge: 'bg-violet-500/15 text-violet-300 border-violet-500/30', text: 'text-violet-300' },
+  cyan: { border: 'border-cyan-500/25', bg: 'bg-cyan-500/5', badge: 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30', text: 'text-cyan-300' },
+}
+
+// 策略说明卡片组件 —— 选完策略后立即显示，无需等待诊断
+const StrategyInfoCard = ({ strategyKey }) => {
+  const meta = getStrategyMeta(strategyKey)
+  const c = COLOR_MAP[meta.color] || COLOR_MAP.indigo
+
+  return (
+    <div className={`rounded-xl border ${c.border} ${c.bg} p-4 mt-4 transition-all duration-300`}>
+      <div className="flex items-start gap-3">
+        <Info className={`w-4 h-4 mt-0.5 flex-shrink-0 ${c.text}`} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-2">
+            <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${c.badge}`}>
+              选股哲学
+            </span>
+            <span className="text-xs text-gray-500">{meta.icon} {meta.title}</span>
+          </div>
+          <p className="text-sm text-gray-300 leading-relaxed">{meta.philosophy}</p>
+
+          {meta.reversedNote && meta.reversedNote.length > 0 && (
+            <div className="mt-3 space-y-2">
+              <div className="flex items-center gap-1.5 text-xs text-amber-400 font-bold">
+                <TrendingDown className="w-3.5 h-3.5" />
+                注意：以下因子为「越高越扣分」的惩罚因子
+              </div>
+              {meta.reversedNote.map((n, i) => (
+                <div key={i} className="flex items-start gap-2 text-xs text-gray-400 bg-black/20 rounded-lg px-3 py-2">
+                  <span className="font-mono font-bold text-amber-300 shrink-0">【{n.factor}】</span>
+                  <span className="leading-relaxed">{n.reason}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
 
 const Diagnose = () => {
   const [query, setQuery] = useState('')
@@ -17,7 +113,7 @@ const Diagnose = () => {
 
   const searchRef = useRef(null)
 
-  // Fetch available strategies on mount
+  // 加载可用策略列表
   useEffect(() => {
     fetch('/api/strategies')
       .then(res => res.json())
@@ -29,7 +125,7 @@ const Diagnose = () => {
       .catch(e => console.error("Failed to load strategies", e))
   }, [])
 
-  // Handle outside click for search suggestions
+  // 点击外部关闭搜索下拉
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (searchRef.current && !searchRef.current.contains(event.target)) {
@@ -40,7 +136,7 @@ const Diagnose = () => {
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [])
 
-  // Search stock logic with debounce
+  // 股票搜索（防抖 300ms）
   useEffect(() => {
     if (!query) {
       setSuggestions([])
@@ -108,7 +204,7 @@ const Diagnose = () => {
         <div className="bg-[#0E1524] rounded-2xl border border-[#222F4C] p-6 shadow-2xl">
           <div className="flex flex-col md:flex-row gap-6">
             
-            {/* Search Box */}
+            {/* 股票搜索框 */}
             <div className="flex-1 relative" ref={searchRef}>
               <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">1. 选择股票标的</label>
               <div className="relative">
@@ -126,7 +222,7 @@ const Diagnose = () => {
                 />
               </div>
               
-              {/* Autocomplete Dropdown */}
+              {/* 自动补全下拉 */}
               {showSuggestions && suggestions.length > 0 && (
                 <div className="absolute z-50 mt-2 w-full bg-[#1A253D] border border-[#2A3F5F] rounded-xl shadow-xl overflow-hidden">
                   {suggestions.map(s => (
@@ -146,7 +242,7 @@ const Diagnose = () => {
               )}
             </div>
 
-            {/* Strategy Select */}
+            {/* 策略选择器 */}
             <div className="md:w-1/3">
               <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">2. 选择检验策略</label>
               <div className="relative">
@@ -170,7 +266,7 @@ const Diagnose = () => {
               </div>
             </div>
 
-            {/* Submit Button */}
+            {/* 提交按钮 */}
             <div className="md:w-40 flex items-end">
               <button 
                 onClick={runDiagnosis}
@@ -188,9 +284,12 @@ const Diagnose = () => {
               </button>
             </div>
           </div>
+
+          {/* 策略逻辑说明卡片 —— 选完策略即展示，无需等待诊断结果 */}
+          <StrategyInfoCard strategyKey={selectedStrategy} />
         </div>
 
-        {/* Results Area */}
+        {/* 错误提示 */}
         {error && (
           <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-4 flex items-center gap-3 text-rose-400 mt-6">
             <AlertTriangle className="w-5 h-5" />
@@ -198,20 +297,21 @@ const Diagnose = () => {
           </div>
         )}
 
+        {/* 诊断结果 */}
         {result && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in-up mt-6">
             
-            {/* Left Column: Basic Info & Score */}
+            {/* 左列：基本信息 & 评分环 */}
             <div className="col-span-1 space-y-6">
               
-              {/* Stock Card */}
+              {/* 股票卡片 */}
               <div className="bg-[#0E1524] rounded-2xl border border-[#222F4C] p-6 relative overflow-hidden group">
                 <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
                 <div className="flex justify-between items-start mb-4">
                   <div>
                     <h2 className="text-3xl font-black text-white">{result.name}</h2>
                     <a 
-                      href={`http://stockpage.10jqka.com.cn/${result.ts_code.substring(0, 6)}/`}
+                      href={`https://quote.eastmoney.com/${result.ts_code.substring(7).toLowerCase()}${result.ts_code.substring(0, 6)}.html`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-indigo-400 hover:text-indigo-300 font-mono text-sm inline-flex items-center gap-1 mt-1 hover:underline"
@@ -232,7 +332,7 @@ const Diagnose = () => {
                 </div>
               </div>
 
-              {/* Score Card */}
+              {/* 评分环 */}
               <div className="bg-gradient-to-b from-[#151D30] to-[#0E1524] rounded-2xl border border-[#222F4C] p-6 text-center">
                 <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4">策略匹配总分</h3>
                 <div className="relative inline-flex items-center justify-center w-40 h-40">
@@ -259,7 +359,7 @@ const Diagnose = () => {
 
             </div>
 
-            {/* Right Column: Radar & Breakdown */}
+            {/* 右列：雷达图 */}
             <div className="col-span-1 lg:col-span-2 space-y-6">
               
               <div className="bg-[#0E1524] rounded-2xl border border-[#222F4C] p-6 flex flex-col h-full">
@@ -297,13 +397,14 @@ const Diagnose = () => {
 
             </div>
             
-            {/* Full Width Bottom: Strengths and Weaknesses */}
+            {/* 全宽底部：加分项 & 扣分项 */}
             <div className="col-span-1 lg:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-6">
               
+              {/* 加分项 */}
               <div className="bg-emerald-900/10 border border-emerald-500/20 rounded-2xl p-6">
                 <h4 className="text-emerald-400 font-bold mb-4 flex items-center gap-2">
                   <CheckCircle className="w-5 h-5" />
-                  模型眼中的“加分项” (Tailwinds)
+                  模型眼中的"加分项" (Tailwinds)
                 </h4>
                 {result.strengths.length > 0 ? (
                   <ul className="space-y-3">
@@ -319,19 +420,35 @@ const Diagnose = () => {
                 )}
               </div>
 
+              {/* 扣分项 */}
               <div className="bg-amber-900/10 border border-amber-500/20 rounded-2xl p-6">
                 <h4 className="text-amber-400 font-bold mb-4 flex items-center gap-2">
                   <AlertTriangle className="w-5 h-5" />
-                  模型眼中的“扣分项” (Headwinds)
+                  模型眼中的"扣分项" (Headwinds)
                 </h4>
                 {result.weaknesses.length > 0 ? (
-                  <ul className="space-y-3">
-                    {result.weaknesses.map((w, i) => (
-                      <li key={i} className="flex items-start gap-2 text-sm text-gray-300">
-                        <div className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-1.5 flex-shrink-0"></div>
-                        <span className="font-mono">{w}</span>
-                      </li>
-                    ))}
+                  <ul className="space-y-4">
+                    {result.weaknesses.map((w, i) => {
+                      // 检测该条扣分项是否命中了反向因子，若是则给出内联解释气泡
+                      const meta = getStrategyMeta(result.strategy)
+                      const matchedNote = meta.reversedNote?.find(n => w.includes(n.factor))
+                      return (
+                        <li key={i} className="flex flex-col gap-1.5">
+                          <div className="flex items-start gap-2 text-sm text-gray-300">
+                            <div className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-1.5 flex-shrink-0"></div>
+                            <span className="font-mono">{w}</span>
+                          </div>
+                          {matchedNote && (
+                            <div className="ml-3.5 flex items-start gap-2 bg-amber-500/5 border border-amber-500/15 rounded-lg px-3 py-2">
+                              <Zap className="w-3 h-3 text-amber-400/80 mt-0.5 flex-shrink-0" />
+                              <span className="text-xs text-amber-200/60 leading-relaxed">
+                                <span className="font-bold text-amber-300/80">这是策略的反向因子</span>——{matchedNote.reason}
+                              </span>
+                            </div>
+                          )}
+                        </li>
+                      )
+                    })}
                   </ul>
                 ) : (
                   <div className="text-sm text-gray-500 italic">该策略下暂无明显短板</div>
@@ -340,7 +457,7 @@ const Diagnose = () => {
 
             </div>
 
-            {/* Core Metrics Summary */}
+            {/* 核心指标明细 */}
             <div className="col-span-1 lg:col-span-3 bg-[#0B1220] border border-[#222F4C] rounded-2xl p-6 mt-2">
               <h4 className="text-gray-400 font-bold mb-4 flex items-center gap-2 text-sm uppercase tracking-wider">
                 <BarChart3 className="w-4 h-4" />
