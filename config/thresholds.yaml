@@ -1,0 +1,325 @@
+# thresholds.yaml —— 全系统阈值 & 打分参数统一配置
+# ========================================================
+# 在此文件调参即可影响：画像打分 / 三层漏斗 / 建仓扫描 / 市场状态判定
+# 修改后无需重启：ThresholdConfig 支持热加载（mtime 检测）
+#
+# 版本说明：
+#   v1.0  - 对应 343 条 T+1 实证校准版（Bull 市场放宽版）
+
+version: "1.0"
+calibration_note: "343 条 T+1 实证校准，Bull 市场放宽版（2026-06-26~2026-07-02）"
+
+# ======================================================================
+# 1. 市场状态实时判定阈值（对齐 market_regime.yaml，优先级更高）
+# ======================================================================
+market_regime_live:
+  # Dark 黑市/空仓 触发条件（满足任意即触发）
+  dark:
+    return_5d_below:     -0.045   # 过去5日收益率 < -4.5%
+    mdd_5d_below:        -0.050   # 过去5日最大回撤 < -5%
+    up_ratio_below:       0.30    # 全市场上涨家数占比 < 30%
+    vol_above_quantile:   0.75    # 20日波动率 > 历史75%分位（辅助过热判定）
+
+  # Bull 牛市 触发条件（Dark未触发时）
+  bull:
+    return_20d_above:     0.05    # 过去20日收益率 > +5%
+    vol_below_quantile:   0.50    # 20日波动率 < 历史50%分位（稳步上涨）
+
+  # Bear 熊市 触发条件（Dark/Bull均未触发时）
+  bear:
+    return_20d_below:    -0.03    # 过去20日收益率 < -3%
+    vol_above_quantile:   0.50    # 20日波动率 > 历史50%分位（恐慌下跌）
+
+  # 仪表盘展示阈值
+  dashboard:
+    dark_up_ratio_pct:   30.0     # 上涨占比警戒线%
+
+# ======================================================================
+# 2. 画像打分参数（PORTRAIT_CONFIG & RIGHT_PORTRAIT_CONFIG）
+# ======================================================================
+portrait_score:
+
+  # 2.1 左侧策略：低位潜伏 + 因子甜区
+  left:
+    # (1) 位置分：获利筹码比例（越低越好，低位筹码）
+    position:
+      profit_ratio_full:   0.25   # ≤ 此值 → 满分
+      profit_ratio_half:   0.55   # ≤ 此值 → 60%+档位
+      profit_ratio_zero:   0.85   # > 此值 → 0分（高位警戒）
+      weight:             20
+
+    # (2) 估值分：PE TTM（越低越好，防估值杀）
+    valuation:
+      pe_ttm_full:        55.0    # ≤ 此值 → 满分
+      pe_ttm_half:        95.0    # ≤ 此值 → 60%+档位
+      pe_ttm_zero:       160.0    # > 此值 → 0分
+      neg_pe_neutral_ratio: 0.5   # 负PE/亏损股给中性分比例
+      weight:             20
+
+    # (3) 温度分：游资热度 + 5日涨幅 + 股性弹性
+    temperature:
+      hot_safe_lo:         0.28   # 游资热度安全区间下界
+      hot_safe_hi:         0.60   # 游资热度安全区间上界
+      return_5d_safe:      0.045  # 5日涨幅 ≤ 此值 → 安全
+      return_5d_max:       0.075  # 5日涨幅 > 此值 → 归零（防追高）
+      vol_bonus_above:     1.50   # 60日波动率高于此值 → 加分（有弹性）
+      vol_bonus_points:    2.0    # 弹性加分点数
+      vol_penalty_below:   1.0    # 60日波动率低于此值 → 扣分（死水股）
+      vol_penalty_points:  3.0    # 死水股扣分点数
+      weight:             20
+
+    # (4) 筹码分：集中度黄金甜区
+    chip:
+      chip_best_lo:       76.0    # 黄金区间下界 → 满分
+      chip_best_hi:       86.0    # 黄金区间上界 → 满分
+      chip_mid_lo:        70.0    # 次优区间下界
+      chip_mid_hi:        92.0    # 次优区间上界
+      overconcentration_ratio: 0.3 # > chip_mid_hi 仅给此比例分数（易踩踏）
+      weight:             20
+
+    # (5) 因子分：综合因子甜区机制
+    factor:
+      sweet_lo:            0.78   # 黄金甜区下界 → 满分
+      sweet_hi:            0.90   # 黄金甜区上界 → 满分
+      overheat:            0.94   # ≥ 此值 → 过度一致扣分项（防利好兑现）
+      half:                0.68   # [half, sweet_lo) → 60%+档位
+      weight:             20
+
+    # 过滤阈值
+    filter_threshold:     48      # portrait_score < 此值被过滤
+    expand_ratio:          3      # 候选股扩展倍数（防过滤后池空）
+
+  # 2.2 右侧策略：趋势突破 + 游资活跃
+  right:
+    # (1) 突破分：获利筹码比例（越高越好，上方无套牢盘）
+    breakout:
+      winner_rate_full:   90.0    # ≥ 此值 → 满分
+      winner_rate_half:   75.0    # ≥ 此值 → 50%+档位
+      winner_rate_zero:   50.0    # < 此值 → 0分
+      weight:             20
+
+    # (2) 动能分：近期收益率（抛物线，防接盘）
+    momentum:
+      full_lo:             0.03   # [3%, 12%] → 满分
+      full_hi:             0.12
+      half_lo:             0.00   # [0%, 3%) 或 (12%, 15%] → 50%
+      half_hi:             0.15
+      zero_lo:            -0.05   # < -5% → 0分
+      zero_hi:             0.20   # > 20% → 0分（极度透支扣分）
+      overshoot_penalty: -10.0    # > zero_hi 倒扣分数
+      weight:             20
+
+    # (3) 活跃分：游资热度（抛物线，防狂热派发）
+    activity:
+      full_lo:             0.60   # [60%, 85%] → 满分
+      full_hi:             0.85
+      half_lo:             0.50   # [50%, 60%) 或 (85%, 92%] → 50%
+      half_hi:             0.92
+      zero_hi:             0.96   # > 96% → 0分
+      overshoot_penalty:  -5.0    # 过热倒扣分数
+      weight:             20
+
+    # (4) 流入分：大单净流入横截面排名
+    inflow:
+      inflow_full:         0.85   # ≥ 85%分位 → 满分
+      inflow_half:         0.50   # ≥ 50%分位 → 50%+
+      weight:             20
+
+    # (5) 集中分：筹码集中度（突破形态需要一定集中度）
+    chip:
+      chip_best_lo:       82.0    # [82, 95] → 满分
+      chip_best_hi:       95.0
+      chip_mid_lo:        75.0    # [75, 82) 或 (95, 100] → 50%
+      weight:             20
+
+  # 2.3 通用：画像等级划分（左右策略共用）
+  grade_map:
+    - { min_score: 80, grade: "A", label: "🔥 强烈推荐" }
+    - { min_score: 60, grade: "B", label: "✅ 符合画像" }
+    - { min_score: 40, grade: "C", label: "⚠️ 勉强通过" }
+    - { min_score:  0, grade: "D", label: "❌ 画像不符" }
+
+# ======================================================================
+# 3. 画像建仓决策：三层过滤漏斗（get_portrait_position_pick）
+# ======================================================================
+position_pick_funnel:
+  common:
+    # 候选池规模（画像打分前预取的因子头部数量）
+    candidate_pool_top_n: 80
+    # 候选池过滤：winner_rate 范围（太偏的直接排除）
+    winner_rate_lo:       25.0    # 左侧：≥25%  （原60→25放宽）
+    winner_rate_hi:       85.0    # 左侧：≤85%
+    winner_rate_right_lo: 60.0    # 右侧：≥60%
+    # 构建综合打分权重（当无权重pkl时的默认合成）
+    default_factor_weights:
+      return_5d:            0.40
+      excess_return_20d:    0.30
+      turnover_rate_20d:    0.20
+      hot_money_score:      0.10
+    # 构建综合打分权重（熊市/避险场景）
+    bear_factor_weights:
+      north_net_inflow_ratio: -0.18
+      return_5d:             -0.54
+      turnover_rate_20d:     -0.28
+    # build_score 合成权重（左/右两套，与原硬编码 1:1 对齐，总和=1.0）
+    #   左侧：潜伏风格 → 因子分 45% + 获利盘分布 25% + 净流入 20% + 低涨幅优先 10%
+    #   右侧：突破风格 → 因子分 40% + 获利盘排名 25% + 净流入 25% + 高涨幅优先 10%
+    build_score_left:
+      factor_score_norm:    0.45
+      winner_rate_score:    0.25
+      inflow_norm:          0.20
+      pct_chg_rank_inv:     0.10   # 1 - pct_chg.rank（低涨幅优先）
+    build_score_right:
+      factor_score_norm:    0.40
+      winner_rate_rank:     0.25
+      inflow_norm:          0.25
+      pct_chg_rank:         0.10   # pct_chg.rank（高涨幅优先）
+    # 画像分超阈值额外加分（防超优质股被误排）
+    portrait_bonus:        15.0    # portrait_score ≥ 75 且 A 级时追加
+    portrait_bonus_min:    75.0
+
+  # 层一：画像分阈值（按策略）
+  layer1:
+    left_threshold:        50.0    # 左侧：portrait_score ≥ 50 分
+    left_grade_label:     "等级 ≥ B/C+"
+    right_threshold:       45.0    # 右侧：portrait_score ≥ 45 分（放宽）
+    right_grade_label:    "等级 ≥ C+"
+
+  # 层二：K线形态防骗线（按策略）
+  layer2:
+    # 左侧潜伏：更严格防追高
+    left:
+      pct_chg_max:          4.5    # 当日涨幅 ≤ 4.5%
+      upper_shadow_max:     0.035  # 上影线 ≤ 3.5%
+      return_20d_max:       0.25   # 20日涨幅 ≤ 25%（中位透支风险）
+    # 右侧突破：允许一定追涨，但防接盘
+    right:
+      pct_chg_max:          9.5    # 当日涨幅 ≤ 9.5%（烂板风险）
+      upper_shadow_max:     0.035  # 上影线 ≤ 3.5%（骗线风险）
+      return_20d_max:       0.40   # 20日涨幅 ≤ 40%（高位接盘风险）
+
+  # 层三：行业分散 + 最终精选（与原版 services.py 1:1 对齐）
+  layer3:
+    max_per_sector:         1      # 同细分行业最多保留 1 支（drop_duplicates 行为）
+    final_pick_top_n:       5      # 最终精选 Top 5
+
+# ======================================================================
+# 4. 建仓机会扫描（get_build_position_opportunities）
+# ======================================================================
+scanner:
+  prefilter:
+    winner_rate_lo:       25.0    # 获利盘 ≥ 25%
+    winner_rate_hi:       85.0    # 获利盘 ≤ 85%
+    restricted_ST:         true   # 排除 ST / *ST
+  scoring_weights:
+    factor_rank:           0.28   # 因子排名权重
+    winner_rate_rank:      0.23   # 获利盘排名权重
+    chip_peak_rank:        0.19   # 筹码峰集中度排名权重
+    inflow_rank:           0.23   # 净流入排名权重
+    pct_chg_inv_rank:      0.07   # 低涨幅优先（逆排名）权重
+  sector_diversify:
+    max_per_sector:        2      # 同细分行业最多 2 只
+  signal_thresholds:              # 择时警报信号等级阈值
+    mom_10_strong_above:   3.0     # 10日动量 > 此值 → 强势（绿）
+    mom_10_weak_below:    -3.0     # 10日动量 < 此值 → 弱势（红）
+    mom_30_strong_above:  10.0     # 30日趋势 > 此值 → 强势（绿）
+    mom_30_weak_below:     0.0     # 30日趋势 < 此值 → 弱势（红）
+    vol_60_low_below:      1.5     # 60日波动率低于此值 → 稳（蓝）
+    vol_60_high_above:     3.0     # 60日波动率高于此值 → 慎（橙）
+    portrait_excellent:   70.0     # 画像分 ≥ 此值 → 优秀（绿）
+    portrait_pass:        50.0     # 画像分 ≥ 此值 → 达标（蓝）
+    portrait_marginal:    45.0     # 画像分 ≥ 此值 → 临线（橙）
+    overall_green_min:     3       # 绿灯数 ≥ 此值 → 建仓机会
+    overall_red_min:       3       # 红灯数 ≥ 此值 → 观望/减仓
+  regime_weights_fallback:
+    # regime_weights.pkl 缺失时的兜底权重（Range 默认）
+    Range:
+      return_5d:           0.25
+      turnover_rate_20d:  -0.15
+      profit_ratio_estimate: 0.30
+
+# ======================================================================
+# 5. UI 展示分级阈值（理由生成 / 配置诊断总评）
+# ======================================================================
+ui_display:
+  # 5.1 建仓推荐理由文案触发阈值（services/portrait.py _reason 函数）
+  pick_reason:
+    # LEFT 左侧策略分项分 ≥ 此值 → 触发对应推荐理由文案
+    left_high:           18      # 位置/估值/温度/筹码/因子 → 满分档
+    left_active:         18      # 温度分 ≥ → 游资未过热
+    # RIGHT 右侧策略分项分 ≥ 此值 → 触发对应推荐理由文案
+    right_high:          18      # 突破分 ≥ → 上方无压
+    right_active:        15      # 动能/活跃/集中/流入 → 强信号档
+    # 共用等级
+    grade_A_reason:      "A级画像"
+    grade_B_reason:      "B级画像"
+
+  # 5.2 单票配置诊断总评分级（market_overview.py _diagnose_single）
+  diagnose_grade:
+    # 综合评分 (4维度均值) 分级
+    grade_A_plus_min:    70.0    # ≥70 → A+ 钻石级配置
+    grade_A_min:         60.0    # ≥60 → A  优秀配置
+    grade_B_min:         50.0    # ≥50 → B  正常配置
+    grade_C_min:         45.0    # ≥45 → C  观察临线
+    # 分项信号分级
+    factor_excellent_min: 60.0   # 因子分 ≥60 → 优秀
+    factor_neutral_min:  40.0    # 因子分 ≥40 → 中性
+    chips_safe_min:      70.0    # 获利盘 ≥70% → 充足
+    chips_danger_max:    30.0    # 获利盘 ≤30% → 套牢过重
+    pe_reasonable_max:   30.0    # 0 < PE < 30 → 估值合理
+    pe_high_min:         60.0    # PE > 60 → 估值偏高
+
+# ======================================================================
+# 6. 游资追踪模块阈值（板块资金流 / 题材热度 / 涨停梯队）
+# ======================================================================
+hot_money_tracker:
+  # 6.1 板块资金流排行榜（Overview 首页游资路线图 Top/Bottom）
+  sector_money_flow:
+    top_n:                10      # 吸金/砸盘板块各取 Top N（原 sector_top_n=10）
+    min_stock_count:       5      # 板块个股数 ≥ 此值才纳入统计（原 HAVING count≥5，防小样本失真）
+
+  # 6.2 题材热度榜单（Overview 首页涨停题材聚合）
+  theme_popularity:
+    top_n:                10      # 热门题材显示 Top N（原 LIMIT 10）
+    limit_dates_lookback: 10      # 涨停题材回溯最近 N 个交易日找最新数据
+    fallback_top_n:       10      # 无涨停表数据时，按行业涨幅榜 Top N 兜底
+
+  # 6.3 题材下钻活跃个股（点击题材卡片 → /api/market/theme-stocks）
+  theme_stocks_drill:
+    default_limit:        10      # 默认返回游资个股数（原 limit=10）
+    sort_by: "net_mf_amount"      # 排序字段：net_mf_amount(主力净流入) / turnover_rate(换手率) / pct_chg(当日涨幅)
+
+# ======================================================================
+# 7. 数据完整性闸门（回测前置检查，阻断脏数据进入回测引擎）
+# ======================================================================
+# 背景：202605-07 期间 adj_factor 块状跳变导致 close_adj 跨块 ±99% 跳变，
+#       future_return_5d 触达 ±clip，Jack 超额净值伪影 -73%。
+# 此闸门在 validator.validate_factors 入口处触发，违反任一阈值即阻断回测并打印告警。
+data_integrity:
+  enabled:                  true    # 总开关，false 时跳过所有闸门
+  block_backtest_on_violation: true  # 检测到违例时是否阻断回测（true 阻断，false 仅告警）
+
+  # 闸门 1：截面日收益均值绝对值
+  # 全市场个股 future_return_5d 的截面算术均值，绝对值超此阈值 → 视为数据伪影
+  # 注：A股全市场单周 ±5%~8% 是真实波动，数据伪影特征是 ±50% 级别
+  cross_section_return_mean_abs_max: 0.15   # |mean| > 15% → 告警/阻断
+
+  # 闸门 2：adj_factor 环比跳变
+  # 单只股票 adj_factor 与前日 |Δ/prev| 超此阈值 → 视为复权因子断裂
+  # 注：真实除权除息（送股/转股）会导致 30%~50% 跳变，属正常；数据伪影特征是 99%+ 跳变
+  adj_factor_jump_ratio_max:      0.80      # |Δ| > 80% → 告警/阻断
+
+  # 闸门 3：截面最小样本数
+  # 单个交易日截面样本数低于此值 → 视为数据稀疏，IC/回测不可靠
+  min_cross_section_size:         30
+
+  # 闸门 4：触达 clip 边界占比
+  # future_return_5d 触达 [-0.5, 0.8] clip 边界的个股占比超此阈值 → 截面被污染
+  clip_boundary_ratio_max:        0.10      # > 10% 个股触达 clip → 告警/阻断
+
+  # 闸门 5：adj_factor NULL 占比
+  # 单日截面 adj_factor 为 NULL 的占比超此阈值 → 数据未补齐
+  adj_factor_null_ratio_max:      0.05      # > 5% NULL → 告警/阻断
+
+  # 检查时间范围（回测窗口前的最近 N 个交易日）
+  lookback_days:                  60        # 检查最近 60 个交易日的截面质量

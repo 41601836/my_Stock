@@ -60,7 +60,7 @@
 ### 单独启动后端引擎 (FastAPI)
 ```bash
 cd web/backend
-uvicorn app:app --host 0.0.0.0 --port 8000 --reload
+uvicorn app:app --host "::" --port 8000 --reload
 ```
 
 ### 单独启动前端控制台 (React + Vite)

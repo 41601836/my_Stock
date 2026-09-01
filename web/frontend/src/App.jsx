@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { Routes, Route, useNavigate, useLocation } from 'react-router-dom'
-import { LayoutDashboard, TrendingUp, BarChart3, Terminal, Activity, Wifi, ShieldAlert, Download, ScanSearch, CheckCircle2, Loader2, XCircle, X, Crosshair, RefreshCw, Zap, Globe, Menu, ChevronDown, ChevronUp, Target } from 'lucide-react'
+import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom'
+import { LayoutDashboard, TrendingUp, BarChart3, Terminal, Activity, Wifi, ShieldAlert, Download, ScanSearch, CheckCircle2, Loader2, XCircle, X, Crosshair, RefreshCw, Zap, Globe, Menu, ChevronDown, ChevronUp, Target, GitCompare, Brain, Shield } from 'lucide-react'
 import Dashboard from './Dashboard'
 import Performance from './Performance'
 import Factors from './Factors'
@@ -15,6 +15,8 @@ import Diagnose from './Diagnose'
 import Overview from './Overview'
 import PortraitAnalysis from './PortraitAnalysis'
 import PositionPick from './PositionPick'
+// EVO 进化层（平行路由：用户点击 ⚡EVO 开关才解锁 EVO 菜单项和 /evo/* 路由）
+import EvoLayout from './evo/EvoLayout'
 
 // ── Toast 通知组件 ─────────────────────────────────────────────────
 const TOAST_STYLES = {
@@ -60,6 +62,17 @@ function App() {
   // 手机端操作菜单折叠状态
   const [actionsOpen, setActionsOpen] = useState(false)
   const [visitorStats, setVisitorStats] = useState(null)
+  // EVO 进化层开关：默认关闭（完全回到经典模式，UI 100% 保持原样），用户主动点击顶部按钮后开启
+  const [evoMode, setEvoMode] = useState(() => {
+    try { return localStorage.getItem('evo_mode') === '1' } catch (_) { return false }
+  })
+  useEffect(() => {
+    try { localStorage.setItem('evo_mode', evoMode ? '1' : '0') } catch (_) { /* noop */ }
+    // 关闭 EVO 模式且当前正好停留在 /evo/* 路径 → 自动跳回仪表盘
+    if (!evoMode && location.pathname.startsWith('/evo')) {
+      navigate('/dashboard', { replace: true })
+    }
+  }, [evoMode, location.pathname, navigate])
 
   // ── 全局缩放级别（手机端专用，持久化到 localStorage）──────────
   const ZOOM_STEP = 0.1
@@ -269,6 +282,15 @@ function App() {
     { id: '/hunter',       label: '胜率猎手优化器', Icon: Crosshair },
   ]
 
+  // EVO 专属菜单项（evoMode=true 时在经典菜单后追加，菜单分隔开）
+  const evoNavItems = [
+    { id: '/evo/dashboard', label: '⚡ EVO 仪表盘',   Icon: Zap,        evo: true },
+    { id: '/evo/compare',   label: '经典 vs 进化对比', Icon: GitCompare, evo: true },
+    { id: '/evo/factors',   label: '🔀 EVO 因子监控',  Icon: Activity,   evo: true },
+    { id: '/evo/ml',        label: '🧠 ML 排序学习',   Icon: Brain,      evo: true },
+    { id: '/evo/graham',    label: '🛡️ 价值雷达',      Icon: Shield,     evo: true },
+  ]
+
   // 手机底部 Tab 只展示核心 5 项
   const mobileNavItems = [
     { id: '/overview',  label: '全览',   Icon: Globe },
@@ -311,6 +333,25 @@ function App() {
               </button>
             )
           })}
+          {/* EVO 进化层菜单分区：只有 evoMode=true 才显示 */}
+          {evoMode ? (
+            <>
+              <div className="mt-4 mb-1 px-3 flex items-center gap-2 text-[10px] font-mono uppercase tracking-wider text-amber-500/80 border-t border-[#1F2937]/70 pt-3">
+                <Zap className="h-3 w-3" />
+                EVO 进化层
+              </div>
+              {evoNavItems.map(({ id, label, Icon }) => {
+                const isActive = location.pathname === id || (id === '/evo/dashboard' && location.pathname === '/evo')
+                return (
+                  <button key={id} onClick={() => handleNav(id)}
+                    className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm transition-all ${isActive ? 'bg-amber-600/20 text-amber-100 border border-amber-500/40 shadow shadow-amber-600/10' : 'text-amber-200/70 hover:bg-amber-500/10 hover:text-amber-100 border border-transparent'}`}>
+                    <Icon className="h-4 w-4 shrink-0" />
+                    <span>{label}</span>
+                  </button>
+                )
+              })}
+            </>
+          ) : null}
         </nav>
       </div>
       <div className="p-4 border-t border-[#1F2937] bg-[#0E1321] text-xs text-gray-500 space-y-1.5">
@@ -410,6 +451,19 @@ function App() {
             <button onClick={() => navigate('/logs')} className="text-xs px-3 py-1 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20 font-mono hover:bg-purple-500/20 transition-colors">
               自适应路由模式
             </button>
+            {/* EVO 进化层开关（顶部显式按钮，方便一键进入平行宇宙模式） */}
+            <button
+              onClick={() => setEvoMode(v => !v)}
+              title={evoMode ? '点击关闭 EVO 模式，回到经典系统' : '点击开启 EVO 进化层（并行路由，不影响经典）'}
+              className={`relative text-xs px-3 py-1 rounded-full border font-mono transition-all flex items-center gap-1
+                ${evoMode
+                  ? 'bg-amber-500/15 text-amber-300 border-amber-500/40 shadow shadow-amber-600/10'
+                  : 'bg-slate-800/60 text-slate-500 border-slate-700/60 hover:text-amber-400 hover:border-amber-500/30 hover:bg-amber-500/5'}`}
+            >
+              <Zap className={`h-3 w-3 ${evoMode ? 'text-amber-300' : ''}`} />
+              EVO
+              {evoMode ? <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" /> : null}
+            </button>
           </div>
 
           {/* 手机端折叠操作菜单 */}
@@ -432,6 +486,16 @@ function App() {
                 </button>
                 <button onClick={handleBacktest} className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-emerald-400 hover:bg-[#1F2937] transition-colors">
                   <RefreshCw className="h-4 w-4" />更新回测
+                </button>
+                {/* EVO 开关（手机端入口：桌面按钮在 hidden md:flex 容器内，手机不可见） */}
+                <button
+                  onClick={() => { setEvoMode(v => !v); setActionsOpen(false) }}
+                  className={`w-full flex items-center gap-2 px-3 py-2.5 text-sm border-t border-[#1F2937] transition-colors
+                    ${evoMode ? 'text-amber-300 bg-amber-500/5' : 'text-amber-400/80 hover:bg-[#1F2937]'}`}
+                >
+                  <Zap className="h-4 w-4" />
+                  {evoMode ? '关闭 EVO 模式' : '开启 EVO 进化层'}
+                  {evoMode && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />}
                 </button>
               </div>
             )}
@@ -462,6 +526,8 @@ function App() {
               <Route path="/diagnosis" element={<Diagnosis />} />
               <Route path="/logs" element={<Logs />} />
               <Route path="/hunter" element={<WinRateHunter upsertToast={upsertToast} removeToast={removeToast} pollTask={pollTask} />} />
+              {/* EVO 进化层：仅在 evoMode 打开时允许进入，否则强制跳回仪表盘（安全闸 1）*/}
+              <Route path="/evo/*" element={evoMode ? <EvoLayout /> : <Navigate to="/dashboard" replace />} />
             </Routes>
           )}
         </div>

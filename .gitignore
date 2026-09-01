@@ -14,3 +14,10 @@ node_modules/
 archives/
 .tunnel.log
 .tunnel_url
+# --- runtime & scratch ---
+.run/
+*.pid
+scratch/*_result.json
+scratch/*.txt
+# --- large datasets (>100MB, GitHub limit) ---
+evo/datasets/*.npz

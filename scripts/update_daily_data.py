@@ -100,11 +100,18 @@ def main():
     
     try:
         token = load_tushare_token()
-        ts.set_token(token)
-        pro = ts.pro_api()
+        try:
+            # 尽力写入 tushare 本地 token 缓存 (~/tk.csv)；
+            # 沙箱/权限受限环境下可能 Permission denied，但不影响拉取，忽略即可
+            ts.set_token(token)
+        except Exception as e:
+            print(f"⚠️ set_token 本地缓存写入失败(不影响拉取): {e}")
+        # 直接将 token 传给 pro_api，避免对 ~/tk.csv 可写性的依赖
+        pro = ts.pro_api(token)
     except Exception as e:
         print(f"❌ 载入 Tushare Token 失败: {e}")
-        return
+        # 以非零码退出：中断后续 && 链，并让前端任务状态显示 ERROR 而非"成功"
+        sys.exit(1)
 
     conn = sqlite3.connect(DB_PATH, timeout=20)
     try:

@@ -147,8 +147,9 @@ const Diagnose = () => {
       fetch(`/api/market/search-stock?query=${encodeURIComponent(query)}`)
         .then(res => res.json())
         .then(data => {
-          if (data.stocks) {
-            setSuggestions(data.stocks)
+          const list = data.results || data.stocks || []
+          if (list.length > 0) {
+            setSuggestions(list)
             setShowSuggestions(true)
           }
         })
@@ -320,10 +321,10 @@ const Diagnose = () => {
                       {result.ts_code} ↗
                     </a>
                   </div>
-                  <div className={`text-right ${result.pct_chg >= 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
-                    <div className="text-2xl font-bold font-mono">{result.close.toFixed(2)}</div>
+                  <div className={`text-right ${(result.pct_chg ?? 0) >= 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
+                    <div className="text-2xl font-bold font-mono">{(result.close ?? 0).toFixed(2)}</div>
                     <div className="text-sm font-bold font-mono">
-                      {result.pct_chg > 0 ? '+' : ''}{result.pct_chg.toFixed(2)}%
+                      {(result.pct_chg ?? 0) > 0 ? '+' : ''}{(result.pct_chg ?? 0).toFixed(2)}%
                     </div>
                   </div>
                 </div>

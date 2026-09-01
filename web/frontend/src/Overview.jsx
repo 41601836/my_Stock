@@ -77,6 +77,24 @@ export default function Overview() {
     }
   }
 
+  // 数据严谨性修复（2026-09-01）：题材排行/资金排行全部使用后端真实数据，
+  // 移除前端 normTurnover/normAmount/computeHotScore 等启发式合成
+  const normalizeOverviewData = (raw) => {
+    if (!raw || typeof raw !== 'object') return raw
+    const out = { ...raw }
+
+    out.adv_dec = raw.adv_dec || raw.today?.adv_dec || { up: 0, down: 0, flat: 0 }
+    out.temperature = raw.temperature || raw.today?.temperature || { median_winner: 50, overbought_ratio: 0, oversold_ratio: 0 }
+    out.regime = raw.regime || raw.today?.regime || 'RANGE'
+    out.date = raw.today?.date || raw.today?.trade_date || raw.price_latest_date || ''
+    out.hot_money_themes = Array.isArray(raw.hot_money_themes) ? raw.hot_money_themes : []
+    out.inst_themes = Array.isArray(raw.inst_themes) ? raw.inst_themes : []
+    out.main_cap_themes = Array.isArray(raw.main_cap_themes) ? raw.main_cap_themes : []
+    out.inflow_rank = Array.isArray(raw.inflow_rank) ? raw.inflow_rank : []
+    out.outflow_rank = Array.isArray(raw.outflow_rank) ? raw.outflow_rank : []
+    return out
+  }
+
   const fetchOverview = async () => {
     setLoading(true)
     try {
@@ -85,7 +103,8 @@ export default function Overview() {
         fetch('/api/market/regime-dashboard')
       ])
       if (!res1.ok || !res2.ok) throw new Error('获取市场行情全览数据失败，请检查后台服务连接')
-      setData(await res1.json())
+      const raw1 = await res1.json()
+      setData(normalizeOverviewData(raw1))
       setRegimeData(await res2.json())
       setError(null)
     } catch (err) {
@@ -406,18 +425,18 @@ export default function Overview() {
                 <div style={{ fontSize: 12, fontWeight: 700, color: '#e6edf3', paddingRight: 28, lineHeight: 1.3 }} title={item.sector}>{item.sector}</div>
                 {/* 连续天数 + 操盘信号 */}
                 <div style={{ padding: '5px 8px', borderRadius: 6, background: sc.bg, border: `1px solid ${sc.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: 9, color: sc.color, fontFamily: 'monospace', fontWeight: 700 }}>🔥 连续 {item.streak_days ?? 1} 天</span>
+                  <span style={{ fontSize: 9, color: sc.color, fontFamily: 'monospace', fontWeight: 700 }}>🔥 {item.streak_days > 0 ? `连续 ${item.streak_days} 天` : '今日启动'}</span>
                   <span style={{ fontSize: 8, color: sc.color, fontFamily: 'monospace', opacity: 0.85 }}>{item.signal}</span>
                 </div>
                 {/* 指标数值 */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, fontFamily: 'monospace' }}>
-                    <span style={{ color: '#6e7681' }}>换手率</span>
+                    <span style={{ color: '#6e7681' }}>20日换手</span>
                     <span style={{ color: '#e6edf3', fontWeight: 700 }}>{item.avg_turnover}%</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, fontFamily: 'monospace' }}>
-                    <span style={{ color: '#6e7681' }}>成交额</span>
-                    <span style={{ color: '#f87171', fontWeight: 700 }}>{item.total_amount} 亿</span>
+                    <span style={{ color: '#6e7681' }}>净流入</span>
+                    <span style={{ color: item.net_inflow > 0 ? '#f43f5e' : item.net_inflow < 0 ? '#10b981' : '#e6edf3', fontWeight: 700 }}>{item.net_inflow > 0 ? `+${item.net_inflow}` : item.net_inflow} 亿</span>
                   </div>
                 </div>
                 {/* 热度进度条 */}
@@ -485,7 +504,7 @@ export default function Overview() {
                 
                 {/* 连续天数 + 操盘信号 */}
                 <div style={{ padding: '5px 8px', borderRadius: 6, background: sc.bg, border: `1px solid ${sc.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: 9, color: sc.color, fontFamily: 'monospace', fontWeight: 700 }}>💎 连续 {item.streak_days ?? 1} 天</span>
+                  <span style={{ fontSize: 9, color: sc.color, fontFamily: 'monospace', fontWeight: 700 }}>💎 {item.streak_days > 0 ? `连续 ${item.streak_days} 天` : '今日启动'}</span>
                   <span style={{ fontSize: 8, color: sc.color, fontFamily: 'monospace', opacity: 0.85 }}>{item.signal}</span>
                 </div>
                 
@@ -506,7 +525,7 @@ export default function Overview() {
                 {/* 核心指标 */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, fontFamily: 'monospace' }}>
-                    <span style={{ color: '#6e7681' }}>锁仓度</span>
+                    <span style={{ color: '#6e7681' }}>筹码集中</span>
                     <span style={{ color: '#10b981', fontWeight: 700 }}>{item.chips_peak}%</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, fontFamily: 'monospace' }}>
@@ -576,7 +595,7 @@ export default function Overview() {
 
                 {/* 连续天数 + 操盘信号 */}
                 <div style={{ padding: '5px 8px', borderRadius: 6, background: sc.bg, border: `1px solid ${sc.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: 9, color: sc.color, fontFamily: 'monospace', fontWeight: 700 }}>💛 连续 {item.streak_days ?? 1} 天</span>
+                  <span style={{ fontSize: 9, color: sc.color, fontFamily: 'monospace', fontWeight: 700 }}>💛 {item.streak_days > 0 ? `连续 ${item.streak_days} 天` : '今日启动'}</span>
                   <span style={{ fontSize: 8, color: sc.color, fontFamily: 'monospace', opacity: 0.85 }}>{item.signal}</span>
                 </div>
                 

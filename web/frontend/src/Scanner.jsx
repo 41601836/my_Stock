@@ -7,7 +7,8 @@ import {
 
 // 建仓信号强度色阶
 function ScoreBar({ value, max = 100 }) {
-  const pct = Math.min(value / max, 1)
+  const safeVal = (value === null || value === undefined || isNaN(value) || !isFinite(value)) ? 0 : Number(value)
+  const pct = Math.min(safeVal / max, 1)
   const color =
     pct >= 0.75 ? 'bg-emerald-500' :
     pct >= 0.55 ? 'bg-sky-500' :
@@ -21,24 +22,38 @@ function ScoreBar({ value, max = 100 }) {
       <div className="w-24 h-2 bg-[#0E1524] rounded-full overflow-hidden border border-[#222F4C]">
         <div className={`h-full rounded-full transition-all duration-700 ${color}`} style={{ width: `${pct * 100}%` }} />
       </div>
-      <span className={`text-xs font-bold font-mono ${textColor}`}>{value.toFixed(1)}</span>
+      <span className={`text-xs font-bold font-mono ${textColor}`}>{safeValue(value, 1)}</span>
     </div>
   )
 }
 
 // 涨跌幅显示
 function PctChg({ value }) {
-  if (value > 0) return <span className="text-rose-500 font-bold font-mono flex items-center gap-0.5"><ArrowUpRight className="h-3 w-3" />+{value.toFixed(2)}%</span>
-  if (value < 0) return <span className="text-emerald-500 font-bold font-mono flex items-center gap-0.5"><ArrowDownRight className="h-3 w-3" />{value.toFixed(2)}%</span>
+  const num = Number(value)
+  const invalid = value === null || value === undefined || isNaN(num) || !isFinite(num)
+  if (invalid) return <span className="text-gray-500 font-mono flex items-center gap-0.5"><Minus className="h-3 w-3" />—</span>
+  if (num > 0) return <span className="text-rose-500 font-bold font-mono flex items-center gap-0.5"><ArrowUpRight className="h-3 w-3" />+{num.toFixed(2)}%</span>
+  if (num < 0) return <span className="text-emerald-500 font-bold font-mono flex items-center gap-0.5"><ArrowDownRight className="h-3 w-3" />{num.toFixed(2)}%</span>
   return <span className="text-gray-400 font-mono flex items-center gap-0.5"><Minus className="h-3 w-3" />0.00%</span>
 }
 
 // 建仓等级标签
 function BuildGrade({ score }) {
-  if (score >= 75) return <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">强烈建仓</span>
-  if (score >= 60) return <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-sky-500/15 text-sky-400 border border-sky-500/30">积极关注</span>
-  if (score >= 45) return <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30">谨慎建仓</span>
+  const s = Number(score)
+  const invalid = score === null || score === undefined || isNaN(s) || !isFinite(s)
+  if (invalid) return <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-gray-500/15 text-gray-400 border border-gray-500/30">—</span>
+  if (s >= 75) return <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">强烈建仓</span>
+  if (s >= 60) return <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-sky-500/15 text-sky-400 border border-sky-500/30">积极关注</span>
+  if (s >= 45) return <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30">谨慎建仓</span>
   return <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-gray-500/15 text-gray-400 border border-gray-500/30">观望</span>
+}
+
+// 安全数值显示：null/undefined/NaN 显示为破折号，防止 .toFixed() 抛错导致整列空白
+function safeValue(value, decimals = 1, fallback = '—') {
+  if (value === null || value === undefined || typeof value !== 'number' || isNaN(value) || !isFinite(value)) {
+    return fallback
+  }
+  return value.toFixed(decimals)
 }
 
 function Scanner() {
@@ -305,12 +320,21 @@ function Scanner() {
                           <BuildGrade score={s.build_score} />
                         </div>
                       </td>
-                      <td className="p-3 text-right font-bold text-sky-400 whitespace-nowrap">{s.mvo_weight !== undefined ? `${s.mvo_weight}%` : '均权'}</td>
-                      <td className="p-3 text-right text-gray-300 whitespace-nowrap">{s.close.toFixed(2)} 元</td>
+                      <td className="p-3 text-right font-bold text-sky-400 whitespace-nowrap">{s.mvo_weight !== undefined && s.mvo_weight !== null ? `${s.mvo_weight}%` : '均权'}</td>
+                      <td className="p-3 text-right text-gray-300 whitespace-nowrap">
+                        {safeValue(s.close, 2, '—')} {safeValue(s.close, 2, '') === '—' ? '' : ' 元'}
+                      </td>
                       <td className="p-3 pr-5 text-right whitespace-nowrap">
-                        <span className={`font-bold text-xs ${s.big_net_inflow > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
-                          {s.big_net_inflow > 0 ? '+' : ''}{s.big_net_inflow.toFixed(2)} 亿
-                        </span>
+                        {(() => {
+                          const v = Number(s.big_net_inflow)
+                          const invalid = s.big_net_inflow === null || s.big_net_inflow === undefined || isNaN(v) || !isFinite(v)
+                          if (invalid) return <span className="font-bold text-xs text-gray-500">—</span>
+                          return (
+                            <span className={`font-bold text-xs ${v > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
+                              {v > 0 ? '+' : ''}{v.toFixed(2)} 亿
+                            </span>
+                          )
+                        })()}
                       </td>
                     </tr>
                   ))}
@@ -372,23 +396,36 @@ function Scanner() {
                 <div className="text-xs text-gray-500 font-mono uppercase tracking-widest">信号详情</div>
 
                 {[
-                  { label: '因子信号强度', value: selectedStock.factor_score, icon: <BarChart3 className="h-4 w-4 text-purple-400" />, suffix: '%', tip: '综合因子横截面得分（策略模型打分）' },
-                  { label: '筹码胜率', value: selectedStock.winner_rate, icon: <Target className="h-4 w-4 text-sky-400" />, suffix: '%', tip: '持股盈利比例，越高说明机构锁仓越深' },
-                  { label: '筹码集中度', value: selectedStock.chips_peak_pct, icon: <Layers className="h-4 w-4 text-sky-300" />, suffix: '%', tip: '主峰筹码占比，越高说明成本越集中' },
-                  { label: '主力净流入', value: Math.abs(selectedStock.big_net_inflow), icon: <DollarSign className="h-4 w-4 text-rose-500" />, suffix: ' 亿', tip: '大单+超大单净买入金额（正值=主力吸筹）', prefix: selectedStock.big_net_inflow >= 0 ? '+' : '-' },
-                  { label: '20日换手率', value: selectedStock.turnover_rate, icon: <Activity className="h-4 w-4 text-amber-400" />, suffix: '%', tip: '20日均换手率，0.5%~15% 为流动性合理区间' },
-                  { label: 'MVO 建议权重', value: selectedStock.mvo_weight, icon: <Sparkles className="h-4 w-4 text-emerald-400" />, suffix: '%', tip: '经 Ledoit-Wolf 风险协方差矩阵和行业暴露控制计算的最优持仓权重，防范集中暴跌' },
-                ].map((item, i) => (
-                  <div key={i} className="flex items-center justify-between py-2 border-b border-[#1A253D]">
-                    <div className="flex items-center gap-2">
-                      {item.icon}
-                      <span className="text-xs text-gray-400" title={item.tip}>{item.label}</span>
+                  { label: '因子信号强度', value: selectedStock.factor_score,    icon: <BarChart3 className="h-4 w-4 text-purple-400" />, suffix: '%',    tip: '综合因子横截面得分（策略模型打分）' },
+                  { label: '筹码胜率',     value: selectedStock.winner_rate,     icon: <Target className="h-4 w-4 text-sky-400" />,    suffix: '%',    tip: '持股盈利比例，越高说明机构锁仓越深' },
+                  { label: '筹码集中度',   value: selectedStock.chips_peak_pct,  icon: <Layers className="h-4 w-4 text-sky-300" />,    suffix: '%',    tip: '主峰筹码占比，越高说明成本越集中' },
+                  { label: '主力净流入',   value: selectedStock.big_net_inflow,  icon: <DollarSign className="h-4 w-4 text-rose-500" />, suffix: ' 亿', tip: '大单+超大单净买入金额（正值=主力吸筹）', isInflow: true },
+                  { label: '20日换手率',   value: selectedStock.turnover_rate,   icon: <Activity className="h-4 w-4 text-amber-400" />,  suffix: '%',   tip: '20日均换手率，0.5%~15% 为流动性合理区间' },
+                  { label: 'MVO 建议权重', value: selectedStock.mvo_weight,      icon: <Sparkles className="h-4 w-4 text-emerald-400" />, suffix: '%',  tip: '经 Ledoit-Wolf 风险协方差矩阵和行业暴露控制计算的最优持仓权重，防范集中暴跌' },
+                ].map((item, i) => {
+                  const num = Number(item.value)
+                  const invalid = item.value === null || item.value === undefined || isNaN(num) || !isFinite(num)
+                  const decimals = item.suffix === ' 亿' ? 2 : 1
+                  let display, colorClass = 'text-gray-100'
+                  if (invalid) {
+                    display = '—'
+                  } else if (item.isInflow) {
+                    const absVal = Math.abs(num)
+                    display = `${num >= 0 ? '+' : '-'}${absVal.toFixed(decimals)}${item.suffix}`
+                    colorClass = num >= 0 ? 'text-rose-500' : 'text-emerald-500'
+                  } else {
+                    display = `${num.toFixed(decimals)}${item.suffix}`
+                  }
+                  return (
+                    <div key={i} className="flex items-center justify-between py-2 border-b border-[#1A253D]">
+                      <div className="flex items-center gap-2">
+                        {item.icon}
+                        <span className="text-xs text-gray-400" title={item.tip}>{item.label}</span>
+                      </div>
+                      <span className={`text-sm font-bold font-mono ${colorClass}`}>{display}</span>
                     </div>
-                    <span className="text-sm font-bold font-mono text-gray-100">
-                      {item.prefix || ''}{item.value.toFixed(item.suffix === ' 亿' ? 2 : 1)}{item.suffix}
-                    </span>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
 
               {/* 建仓理由 */}
@@ -397,7 +434,7 @@ function Scanner() {
                   <Info className="h-3 w-3" /> 建仓依据
                 </div>
                 <div className="text-xs text-gray-300 leading-relaxed font-sans">
-                  {selectedStock.reason}
+                  {selectedStock.reason || '暂无详细建仓依据，请结合因子评分综合判断。'}
                 </div>
               </div>
 
@@ -412,23 +449,36 @@ function Scanner() {
             {/* 综合评分雷达（文字版） */}
             <div className="p-4 bg-[#151D30]/60 rounded-2xl border border-[#222F4C]">
               <div className="text-xs text-gray-500 font-mono mb-3">综合评分构成</div>
-              {[
-                { label: '因子信号', score: selectedStock.factor_score, weight: 35 },
-                { label: '筹码胜率', score: Math.min(selectedStock.winner_rate, 100), weight: 25 },
-                { label: '主力吸筹', score: selectedStock.build_score > 0 ? 60 : 30, weight: 25 },
-                { label: '低追高险', score: Math.max(0, 100 - Math.abs(selectedStock.pct_chg) * 10), weight: 15 },
-              ].map((item, i) => (
-                <div key={i} className="flex items-center gap-3 mb-2">
-                  <div className="text-xs text-gray-500 w-16 shrink-0">{item.label}</div>
-                  <div className="flex-1 h-1.5 bg-[#0E1524] rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-purple-500/70 rounded-full transition-all duration-700"
-                      style={{ width: `${Math.min(item.score, 100)}%` }}
-                    />
-                  </div>
-                  <span className="text-xs text-gray-400 font-mono w-10 text-right">{item.weight}%权</span>
-                </div>
-              ))}
+              {(() => {
+                const _safe = (v, fallback = 0) => {
+                  const n = Number(v)
+                  return (v === null || v === undefined || isNaN(n) || !isFinite(n)) ? fallback : n
+                }
+                const factor_s = _safe(selectedStock.factor_score)
+                const winner_s = _safe(selectedStock.winner_rate)
+                const build_s  = _safe(selectedStock.build_score)
+                const pct_s    = _safe(selectedStock.pct_chg)
+                return [
+                  { label: '因子信号', score: factor_s, weight: 35 },
+                  { label: '筹码胜率', score: Math.min(winner_s, 100), weight: 25 },
+                  { label: '主力吸筹', score: build_s > 0 ? 60 : 30, weight: 25 },
+                  { label: '低追高险', score: Math.max(0, 100 - Math.abs(pct_s) * 10), weight: 15 },
+                ].map((item, i) => {
+                  const widthPct = Math.max(0, Math.min(100, Number(item.score) || 0))
+                  return (
+                    <div key={i} className="flex items-center gap-3 mb-2">
+                      <div className="text-xs text-gray-500 w-16 shrink-0">{item.label}</div>
+                      <div className="flex-1 h-1.5 bg-[#0E1524] rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-purple-500/70 rounded-full transition-all duration-700"
+                          style={{ width: `${widthPct}%` }}
+                        />
+                      </div>
+                      <span className="text-xs text-gray-400 font-mono w-10 text-right">{item.weight}%权</span>
+                    </div>
+                  )
+                })
+              })()}
             </div>
           </div>
           </>

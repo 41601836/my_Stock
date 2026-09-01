@@ -551,13 +551,14 @@ def api_market_regime_dashboard():
     return get_regime_dashboard()
 
 @app.get("/api/market/theme-stocks")
-def api_market_theme_stocks(sector: str = "", sort: str = "desc"):
+def api_market_theme_stocks(sector: str = "", sort: str = "desc", limit: int | None = None, sort_by: str | None = None):
     """
     获取游资热点题材下的具体股票列表
+    S2：limit/sort_by 默认值从 config/thresholds.yaml.hot_money_tracker 读取
     """
     if not sector:
         return {"error": "Sector parameter is required"}
-    return get_theme_stocks(sector, limit=10, sort_order=sort)
+    return get_theme_stocks(sector, limit=limit, sort_order=sort, sort_by=sort_by)
 
 @app.get("/api/market/search-stock")
 def api_market_search_stock(query: str = ""):
@@ -565,7 +566,7 @@ def api_market_search_stock(query: str = ""):
     模糊查询股票代码或名称
     """
     if not query:
-        return {"stocks": []}
+        return {"results": []}
     return search_stock(query)
 
 @app.get("/api/market/diagnose")
@@ -614,5 +615,108 @@ def get_stats():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+# ═══════════════════════════════════════════════════════════
+# EVO 进化层路由（平行挂载，绝不影响任何现有 /api/* 接口）
+# - 前缀：/api/evo/*
+# - 代码：routers/evo.py  +  services/evo/  （全新目录，0 侵入经典层）
+# - 配置：config/evo.yaml  （8 大模块独立开关，支持热加载）
+# ═══════════════════════════════════════════════════════════
+try:
+    from routers import evo_router
+    app.include_router(evo_router)
+    # 启动时打印一行标记，方便日志里确认进化层已挂载
+    import logging as _evo_logging
+    _evo_logging.getLogger(__name__).info(
+        "✅ [Evo] 进化层路由已挂载：/api/evo/*（平行层，经典路由不受影响）"
+    )
+except Exception as _evo_exc:
+    import logging as _evo_logging2
+    _evo_logging2.getLogger(__name__).warning(
+        f"⚠️ [Evo] 进化层路由挂载失败（经典系统照常运行）：{_evo_exc}"
+    )
+
+
+# ══════════════════════════════════════════════════════════════════
+# 生产环境：托管前端静态文件（dist）—— 必须放在所有 API 路由之后
+# 当 web/frontend/dist 存在时，将其作为 SPA 静态资源挂载，
+# 使后端单进程即可提供完整前后端服务（无需 Vite dev server / 代理）。
+# 注意：此 catch-all 路由必须在所有 /api/* 路由注册之后，否则会拦截 API 请求
+# ══════════════════════════════════════════════════════════════════
+_FRONTEND_DIST = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
+if os.path.isdir(_FRONTEND_DIST) and os.path.exists(os.path.join(_FRONTEND_DIST, "index.html")):
+    from fastapi.staticfiles import StaticFiles
+    from fastapi.responses import FileResponse
+
+    # 挂载 /assets 静态资源目录（JS/CSS/图片等）
+    _assets_path = os.path.join(_FRONTEND_DIST, "assets")
+    if os.path.isdir(_assets_path):
+        app.mount("/assets", StaticFiles(directory=_assets_path), name="assets")
+
+    # SPA fallback：所有非 /api 路径返回 index.html，交给 React Router 处理
+    @app.get("/{full_path:path}")
+    async def _spa_fallback(full_path: str):
+        # 排除 API 路径（已被具体路由匹配）
+        if full_path.startswith("api"):
+            raise HTTPException(status_code=404, detail="Not Found")
+        # 请求的文件若存在于 dist 中，直接返回该文件
+        candidate = os.path.join(_FRONTEND_DIST, full_path)
+        if full_path and os.path.isfile(candidate):
+            return FileResponse(candidate)
+        # 否则返回 index.html（客户端路由）
+        return FileResponse(os.path.join(_FRONTEND_DIST, "index.html"))
+
+    logging.getLogger(__name__).info(f"✅ 生产模式：已挂载前端静态文件 { _FRONTEND_DIST }")
+
+
 if __name__ == "__main__":
-    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+    import socket as _socket
+    import uvicorn as _uvicorn
+
+    # Dual-stack launcher：同时监听 IPv4 + IPv6，解决 macOS "localhost"
+    # 在 A/AAAA 双记录下的 Happy Eyeballs 竞态导致间歇性
+    # ERR_CONNECTION_REFUSED（相对路径 fetch 先冲 IPv6 失败、用户看到 OFFLINE）。
+    # 可通过环境变量覆盖：PORT=8000 RELOAD=true WORKERS=1 python3 app.py
+    _port = int(os.environ.get("PORT", "8000"))
+    _reload = os.environ.get("RELOAD", "false").lower() in ("1", "true", "yes", "on")
+    _workers = int(os.environ.get("WORKERS", "1"))
+
+    _sockets = []
+    # ── 1) IPv6 socket（尝试 dual-stack：V6ONLY=0）────────────
+    _s6 = _socket.socket(_socket.AF_INET6, _socket.SOCK_STREAM)
+    _s6.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+    try:
+        _s6.setsockopt(_socket.IPPROTO_IPV6, _socket.IPV6_V6ONLY, 0)
+        _s6.bind(("::", _port))
+        _dual_stack_ok = True
+    except OSError:
+        # 系统不允许 dual-stack（部分 Linux sysctl 禁用）：退化为纯 IPv6 socket
+        try:
+            _s6.setsockopt(_socket.IPPROTO_IPV6, _socket.IPV6_V6ONLY, 1)
+            _s6.bind(("::", _port))
+            _dual_stack_ok = False
+        except OSError:
+            _s6.close()
+            _s6 = None
+            _dual_stack_ok = False
+    if _s6 is not None:
+        _s6.listen(128)
+        _sockets.append(_s6)
+
+    # ── 2) IPv4 socket（仅当 dual-stack 失败时再开，避免双绑冲突）──
+    if not _dual_stack_ok:
+        _s4 = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+        _s4.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+        try:
+            _s4.bind(("0.0.0.0", _port))
+            _s4.listen(128)
+            _sockets.append(_s4)
+        except OSError:
+            _s4.close()
+
+    if not _sockets:
+        raise RuntimeError(f"无法在端口 {_port} 上绑定 IPv4/IPv6 任一 socket，请检查端口占用")
+
+    _cfg = _uvicorn.Config("app:app", reload=_reload, workers=_workers, access_log=False)
+    _srv = _uvicorn.Server(_cfg)
+    _srv.run(sockets=_sockets)

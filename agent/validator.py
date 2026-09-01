@@ -162,6 +162,32 @@ def validate_factors(config_path="agent/config.yaml"):
         }
         
     print(f"✅ [Validator] 基础因子池校验完成。")
+
+    # 数据完整性闸门检查（热加载阈值，违例时阻断回测）
+    # 用 importlib 直接加载 _common, 绕过 services/__init__.py 的聚合导入 (后者依赖 3.10+ 语法)
+    try:
+        import importlib.util as _ilu
+        _spec = _ilu.spec_from_file_location(
+            "_common_integrity",
+            os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                         "web", "backend", "services", "_common.py")
+        )
+        _mod = _ilu.module_from_spec(_spec)
+        _spec.loader.exec_module(_mod)
+        integrity = _mod.check_data_integrity(df_aligned)
+        print(f"🛡️ [DataIntegrity] {integrity['summary']}")
+        if not integrity["passed"]:
+            print("   违例详情 (前 10 条):")
+            for v in integrity["violations"][:10]:
+                print(f"   - {v.get('message', v.get('gate', 'unknown'))}")
+            if integrity.get("block_backtest_on_violation", True):
+                print("❌ [DataIntegrity] 回测已阻断，请先修复 daily_prices 数据再重试")
+            else:
+                print("⚠️ [DataIntegrity] 仅告警模式，回测继续 (block_backtest_on_violation=false)")
+        report["_data_integrity"] = integrity
+    except Exception as _e:
+        print(f"⚠️ [DataIntegrity] 闸门检查失败 (非致命): {_e}")
+
     return report, df_aligned
 
 if __name__ == "__main__":

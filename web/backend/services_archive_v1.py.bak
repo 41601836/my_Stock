@@ -166,14 +166,109 @@ def _log_recommendations_to_tracker(conn, recommend_date, stocks, regime):
 # ─────────────────────────────────────────────────────────
 # 1. 市场状态
 # ─────────────────────────────────────────────────────────
+def compute_live_regime():
+    """
+    基于数据库最新全市场行情，实时动态计算当前 Regime (Bull/Range/Bear/Dark)。
+    解决历史 CSV 静态数据滞后，页面长期显示旧状态的问题。
+
+    返回: dict = {regime, model_used, return_20d, return_5d, mdd_5d, vol_20d, up_ratio, vol_50pct, vol_75pct, triggers}
+    """
+    try:
+        conn = get_db_connection(DB_PATH)
+        df_bench = pd.read_sql(
+            "SELECT trade_date, "
+            "  AVG(pct_chg) as pct_chg, "
+            "  SUM(CASE WHEN pct_chg > 0 THEN 1 ELSE 0 END) * 1.0 / COUNT(*) as up_ratio "
+            "FROM daily_prices "
+            "GROUP BY trade_date "
+            "ORDER BY trade_date DESC LIMIT 60",
+            conn
+        )
+        conn.close()
+
+        if df_bench.empty or len(df_bench) < 6:
+            return None
+
+        df_bench = df_bench.sort_values("trade_date").reset_index(drop=True)
+        df_bench["nav"] = (1.0 + df_bench["pct_chg"] / 100.0).cumprod()
+        df_bench["return_20d"] = df_bench["nav"] / df_bench["nav"].shift(20) - 1.0
+        df_bench["return_5d"]  = df_bench["nav"] / df_bench["nav"].shift(5)  - 1.0
+        df_bench["vol_20d"]    = df_bench["pct_chg"].rolling(20).std()
+        roll_max_5d = df_bench["nav"].rolling(5).max()
+        df_bench["mdd_5d"]     = (df_bench["nav"] - roll_max_5d) / roll_max_5d
+
+        valid_vol = df_bench["vol_20d"].dropna()
+        vol_50pct = float(valid_vol.quantile(0.50)) if len(valid_vol) > 0 else 1.5
+        vol_75pct = float(valid_vol.quantile(0.75)) if len(valid_vol) > 0 else 2.0
+
+        last   = df_bench.iloc[-1]
+        ret20  = float(last["return_20d"]) if not pd.isna(last["return_20d"]) else 0.0
+        ret5w  = float(last["return_5d"])  if not pd.isna(last["return_5d"])  else 0.0
+        vol20  = float(last["vol_20d"])    if not pd.isna(last["vol_20d"])    else 0.0
+        mdd5   = float(last["mdd_5d"])     if not pd.isna(last["mdd_5d"])     else 0.0
+        up_r   = float(last["up_ratio"])   if not pd.isna(last["up_ratio"])   else 0.5
+
+        triggers = []
+        dark_trigger = False
+        bear_trigger = False
+        bull_trigger = False
+
+        if ret5w < -0.045:
+            dark_trigger = True
+            triggers.append({"name": "周收益率触发Dark", "value": f"{ret5w:.2%}", "threshold": "< -4.5%", "color": "red"})
+        if mdd5 < -0.05:
+            dark_trigger = True
+            triggers.append({"name": "5日最大回撤触发Dark", "value": f"{mdd5:.2%}", "threshold": "< -5%", "color": "red"})
+        if vol20 > vol_75pct:
+            triggers.append({"name": "波动率过热", "value": f"{vol20:.3f}%", "threshold": f"> {vol_75pct:.3f}%", "color": "orange"})
+        if up_r < 0.30:
+            dark_trigger = True
+            triggers.append({"name": "上涨家数占比过低", "value": f"{up_r:.1%}", "threshold": "< 30%", "color": "red"})
+
+        if not dark_trigger:
+            if ret20 > 0.05 and vol20 < vol_50pct:
+                bull_trigger = True
+                triggers.append({"name": "20日稳步上涨+Bull", "value": f"{ret20:.2%}", "threshold": "> +5% & 低波动", "color": "green"})
+            elif ret20 < -0.03 and vol20 > vol_50pct:
+                bear_trigger = True
+                triggers.append({"name": "20日下跌+高波动 Bear", "value": f"{ret20:.2%}", "threshold": "< -3% & 高波动", "color": "rose"})
+
+        if dark_trigger:
+            regime, model = "Dark", "Dark_Model"
+        elif bull_trigger:
+            regime, model = "Bull", "Bull_Model"
+        elif bear_trigger:
+            regime, model = "Bear", "Bear_Model"
+        else:
+            regime, model = "Range", "Range_Model"
+
+        return {
+            "regime": regime,
+            "model_used": model,
+            "return_20d": ret20,
+            "return_5d": ret5w,
+            "mdd_5d": mdd5,
+            "vol_20d": vol20,
+            "up_ratio": up_r,
+            "vol_50pct": vol_50pct,
+            "vol_75pct": vol_75pct,
+            "triggers": triggers,
+            "db_latest_date": int(last["trade_date"]),
+        }
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"compute_live_regime failed: {e}")
+        return None
+
+
 def get_market_status():
-    """获取最新市场状态（从回测 CSV 的最后一行）及数据库最新日期"""
-    
-    # 获取数据库最新日期及健康状态
+    """获取最新市场状态（动态实时计算 + 回测CSV兜底）及数据库最新日期"""
+
     db_latest = "—"
+    db_latest_int = 0
     db_health = "UNKNOWN"
     health_issues = []
-    
+
     try:
         if os.path.exists(DB_PATH):
             conn = get_db_connection(DB_PATH)
@@ -181,14 +276,13 @@ def get_market_status():
             cursor.execute("SELECT MAX(trade_date) FROM daily_prices")
             d = cursor.fetchone()[0]
             if d:
+                db_latest_int = int(d)
                 v = str(int(d))
                 db_latest = f"{v[:4]}-{v[4:6]}-{v[6:]}"
             conn.close()
-            
-        # 读取体检报告
+
         health_report_path = os.path.join(os.path.dirname(DB_PATH), "health_report.json")
         if os.path.exists(health_report_path):
-            import json
             with open(health_report_path, "r", encoding="utf-8") as f:
                 report = json.load(f)
                 if report.get("status") == "ERROR":
@@ -202,125 +296,122 @@ def get_market_status():
         else:
             db_health = "PARTIAL_DATA"
             health_issues = ["未找到数据体检报告，等待后台哨兵扫描..."]
-            
+
     except Exception as e:
         import logging
         logging.getLogger(__name__).error(f"Failed to read market status from DB: {e}")
 
-    if not os.path.exists(RESULTS_PATH):
-        return {
-            "trade_date": "—",
-            "db_latest_date": db_latest,
-            "db_health": db_health,
-            "health_issues": health_issues,
-            "regime": "Dark",
-            "model_used": "Dark_Light_Track",
-            "portfolio_return": 0.0,
-            "benchmark_return": 0.0,
-            "excess_return": 0.0,
-        }
-    df = pd.read_csv(RESULTS_PATH)
-    last = df.iloc[-1]
-    raw_date = str(last["trade_date"])
-    fmt_date = f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:]}"
+    # ============== 核心修复：优先实时计算 Regime ==============
+    live_info = compute_live_regime()
+
+    # 先从CSV读取基础数据（portfolio_return / benchmark_return 等收益统计仍然保留历史基准）
+    base_port_ret = 0.0
+    base_bench_ret = 0.0
+    base_excess_ret = 0.0
+    csv_trade_date = "—"
+    csv_regime = None
+    csv_model = None
+    csv_last_date_int = 0
+
+    if os.path.exists(RESULTS_PATH):
+        df = pd.read_csv(RESULTS_PATH)
+        if len(df) > 0:
+            last = df.iloc[-1]
+            raw_date = str(last["trade_date"])
+            csv_last_date_int = int(float(last["trade_date"])) if isinstance(last["trade_date"], (int, float)) else int(str(last["trade_date"]))
+            csv_trade_date = f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:]}"
+            csv_regime = last["regime"]
+            csv_model  = last["model_used"]
+            base_port_ret  = float(last["portfolio_return"])
+            base_bench_ret = float(last["benchmark_return"])
+            base_excess_ret = float(last["excess_return"])
+
+    # 决策：用 实时Regime OR 静态CSV Regime？
+    # 规则：数据库最新日期 > CSV最后日期  → 用实时计算的 Regime（动态显示）
+    #      否则 → 使用 CSV (归档阶段，正常情况)
+    if live_info is not None and db_latest_int > 0 and db_latest_int > csv_last_date_int:
+        final_regime     = live_info["regime"]
+        final_model      = live_info["model_used"]
+        final_trade_date = db_latest
+        regime_source_tag = " (LIVE 动态)"
+    else:
+        final_regime     = csv_regime if csv_regime else "Dark"
+        final_model      = csv_model  if csv_model  else "Dark_Light_Track"
+        final_trade_date = csv_trade_date if csv_trade_date != "—" else db_latest
+        regime_source_tag = " (CSV 归档)"
+
     return {
-        "trade_date": fmt_date,
+        "trade_date": final_trade_date,
         "db_latest_date": db_latest,
         "db_health": db_health,
         "health_issues": health_issues,
-        "regime": last["regime"],
-        "model_used": last["model_used"],
-        "portfolio_return": float(last["portfolio_return"]),
-        "benchmark_return": float(last["benchmark_return"]),
-        "excess_return": float(last["excess_return"]),
+        "regime": final_regime,
+        "model_used": final_model,
+        "portfolio_return": base_port_ret,
+        "benchmark_return": base_bench_ret,
+        "excess_return": base_excess_ret,
+        "_debug": {
+            "csv_last_date_int": csv_last_date_int,
+            "db_latest_int": db_latest_int,
+            "regime_source": ("LIVE 动态" if live_info and db_latest_int > csv_last_date_int else "CSV 归档"),
+            "csv_regime": csv_regime,
+            "live_regime": live_info["regime"] if live_info else None,
+            "live_triggers": live_info["triggers"] if live_info else [],
+        }
     }
 
 
 def get_regime_dashboard():
     """
     实时计算路由层的各项触发指标，帮助用户理解当前 Regime 是如何被判定的。
-    返回：
-        regime: 当前状态 (Bull/Range/Bear/Dark)
-        indicators: 各项实时指标数值
-        thresholds: 对应的触发阈值
-        triggers: 哪些条件实际被触发
-        position_advice: 仓位建议
-        regime_history: 最近 8 周的路由状态历史
+    复用 compute_live_regime() 保证与 Dashboard 主状态 100% 一致。
     """
     try:
-        conn = get_db_connection(DB_PATH)
-        
-        # 取最近 60 个交易日的全市场每日等权收益率，构建金融严谨的基准净值 (Benchmark NAV)
-        df_bench = pd.read_sql(
-            "SELECT trade_date, "
-            "  AVG(pct_chg) as pct_chg, "
-            "  SUM(CASE WHEN pct_chg > 0 THEN 1 ELSE 0 END) * 1.0 / COUNT(*) as up_ratio "
-            "FROM daily_prices "
-            "GROUP BY trade_date "
-            "ORDER BY trade_date DESC LIMIT 60",
-            conn
-        )
-        conn.close()
-        
-        if df_bench.empty or len(df_bench) < 6:
-            return {"error": "历史数据不足，无法计算路由层指标"}
-        
-        df_bench = df_bench.sort_values("trade_date").reset_index(drop=True)
-        
-        # 计算全市场复利累计净值 nav
-        df_bench["nav"] = (1.0 + df_bench["pct_chg"] / 100.0).cumprod()
-        
-        # 精确计算 20日收益率、5日收益率、20日波动率与 5日最大回撤 (标准小数比例 0-1)
-        df_bench["return_20d"] = df_bench["nav"] / df_bench["nav"].shift(20) - 1.0
-        df_bench["return_5d"] = df_bench["nav"] / df_bench["nav"].shift(5) - 1.0
-        df_bench["vol_20d"] = df_bench["pct_chg"].rolling(20).std()
-        
-        roll_max_5d = df_bench["nav"].rolling(5).max()
-        df_bench["mdd_5d"] = (df_bench["nav"] - roll_max_5d) / roll_max_5d
-        
-        # 获取历史波动率分位数（用全样本）
-        valid_vol = df_bench["vol_20d"].dropna()
-        vol_50pct = float(valid_vol.quantile(0.50)) if len(valid_vol) > 0 else 1.5
-        vol_75pct = float(valid_vol.quantile(0.75)) if len(valid_vol) > 0 else 2.0
-        
-        last = df_bench.iloc[-1]
-        ret20 = float(last["return_20d"]) if not pd.isna(last["return_20d"]) else 0.0
-        vol20 = float(last["vol_20d"]) if not pd.isna(last["vol_20d"]) else 0.0
-        mdd5  = float(last["mdd_5d"])  if not pd.isna(last["mdd_5d"])  else 0.0
-        up_r  = float(last["up_ratio"]) if not pd.isna(last["up_ratio"]) else 0.5
-        ret5w = float(last["return_5d"]) if not pd.isna(last["return_5d"]) else 0.0
-        
-        # 判定当前触发的条件 (统一采用标准小数比例比对: -0.045 即 -4.5%, -0.05 即 -5%)
-        triggers = []
-        if ret5w < -0.045:
-            triggers.append({"name": "周收益率触发", "value": f"{ret5w:.2%}", "threshold": "< -4.5%", "color": "red"})
-        if mdd5 < -0.05:
-            triggers.append({"name": "5日最大回撤", "value": f"{mdd5:.2%}", "threshold": "< -5%", "color": "red"})
-        if vol20 > vol_75pct:
-            triggers.append({"name": "波动率过热", "value": f"{vol20:.3f}%", "threshold": f"> {vol_75pct:.3f}% (75分位)", "color": "orange"})
-        if up_r < 0.30:
-            triggers.append({"name": "上涨家数占比", "value": f"{up_r:.1%}", "threshold": "< 30%", "color": "red"})
-        if ret20 > 0.05 and vol20 < vol_50pct and not triggers:
-            triggers.append({"name": "20日涨幅 + 低波动", "value": f"{ret20:.2%}", "threshold": "> +5% & 低波动", "color": "green"})
-        if ret20 < -0.03 and vol20 > vol_50pct and not triggers:
-            triggers.append({"name": "20日跌幅 + 高波动", "value": f"{ret20:.2%}", "threshold": "< -3% & 高波动", "color": "rose"})
-        
-        # 读取历史 regime（最近 8 周）
+        # 1. 复用 compute_live_regime() 实时计算 Regime 与指标
+        live = compute_live_regime()
+        if live is None:
+            return {"error": "数据不足，无法实时计算市场状态，请先更新日线数据"}
+
+        regime   = live["regime"]
+        ret20    = live["return_20d"]
+        ret5w    = live["return_5d"]
+        vol20    = live["vol_20d"]
+        mdd5     = live["mdd_5d"]
+        up_r     = live["up_ratio"]
+        vol_50pct = live["vol_50pct"]
+        vol_75pct = live["vol_75pct"]
+        triggers  = live["triggers"]
+
+        # 2. 读取历史 regime（最近 8 周）：从 CSV 构建
         regime_history = []
+        csv_latest_int = 0
         if os.path.exists(RESULTS_PATH):
             df_res = pd.read_csv(RESULTS_PATH)
             for _, row in df_res.tail(8).iterrows():
-                d = str(int(row["trade_date"]))
+                d_int = int(float(row["trade_date"])) if isinstance(row["trade_date"], (int, float)) else int(str(row["trade_date"]))
+                csv_latest_int = max(csv_latest_int, d_int)
+                d_str = str(d_int)
                 regime_history.append({
-                    "date": f"{d[:4]}-{d[4:6]}-{d[6:]}",
+                    "date": f"{d_str[:4]}-{d_str[4:6]}-{d_str[6:]}",
                     "regime": row["regime"],
                     "portfolio_return": round(float(row["portfolio_return"]) * 100, 2),
                     "benchmark_return": round(float(row["benchmark_return"]) * 100, 2),
                 })
-        
-        # 当前状态 & 仓位建议
-        market_status = get_market_status()
-        regime = market_status.get("regime", "Range")
+
+        # 3. 追加最新实时 Regime（仅当数据库比 CSV 新时，否则不追加避免重复）
+        db_int = live["db_latest_date"]
+        if db_int > csv_latest_int:
+            db_s = str(db_int)
+            live_market = get_market_status()
+            regime_history.append({
+                "date": f"{db_s[:4]}-{db_s[4:6]}-{db_s[6:]}",
+                "regime": live["regime"],
+                "portfolio_return": round(float(live_market.get("portfolio_return", 0.0)) * 100, 2),
+                "benchmark_return": round(float(live_market.get("benchmark_return", 0.0)) * 100, 2),
+                "_live": True,
+            })
+
+        # 4. 仓位建议映射
         position_map = {
             "Bull": {"pct": "80-100%", "color": "green", "advice": "全速做多，放大仓位"},
             "Range": {"pct": "40-60%", "color": "blue", "advice": "轮动操作，高抛低吸"},
@@ -328,19 +419,19 @@ def get_regime_dashboard():
             "Dark": {"pct": "0%", "color": "red", "advice": "空仓观望，现金为王"},
         }
         pos = position_map.get(regime, position_map["Range"])
-        
+
         return {
             "regime": regime,
             "indicators": {
-                "return_20d": round(ret20 * 100, 2),    # 转为百分比显示
-                "vol_20d": round(vol20, 4),
-                "mdd_5d": round(mdd5 * 100, 2),
-                "up_ratio": round(up_r * 100, 1),
-                "return_5d": round(ret5w * 100, 2),
+                "return_20d": round(ret20 * 100, 2),
+                "vol_20d":    round(vol20, 4),
+                "mdd_5d":     round(mdd5 * 100, 2),
+                "up_ratio":   round(up_r * 100, 1),
+                "return_5d":  round(ret5w * 100, 2),
             },
             "thresholds": {
-                "vol_50pct": round(vol_50pct, 4),
-                "vol_75pct": round(vol_75pct, 4),
+                "vol_50pct":   round(vol_50pct, 4),
+                "vol_75pct":   round(vol_75pct, 4),
                 "bull_ret": 5.0,
                 "bear_ret": -3.0,
                 "dark_weekly": -4.5,
@@ -352,6 +443,8 @@ def get_regime_dashboard():
             "regime_history": regime_history,
         }
     except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"get_regime_dashboard failed: {e}")
         return {"error": str(e)}
 
 def get_theme_stocks(sector_name: str, limit: int = 10, sort_order: str = "DESC"):
@@ -2753,7 +2846,7 @@ def get_portrait_position_pick(top_n: int = 30, strategy: str = "left"):
             df = df[df["winner_rate"] >= 60.0]
         else:
             # 实证表明：左侧上涨组胜率均值 62.12% vs 下跌组 69.74%，过高胜率多处于透支阶段
-            # 采用以 60% 为中心的黄金蓄势钟形评分
+            # 采用以 60% 为中心的黄金蓄势钟形评分（扩大范围：25%-85%，熊市/牛市过渡期候选池从2只扩大到10+只）
             wr_dist = (df["winner_rate"] - 60.0).abs()
             df["winner_rate_score"] = (1.0 - (wr_dist / 35.0).clip(0, 1.0))
             df["inflow_norm"]       = df["big_net_inflow"].rank(pct=True)
@@ -2763,7 +2856,7 @@ def get_portrait_position_pick(top_n: int = 30, strategy: str = "left"):
                 df["inflow_norm"]       * 0.20 +
                 (1.0 - df["pct_chg"].rank(pct=True)) * 0.10
             )
-            df = df[(df["winner_rate"] >= 35.0) & (df["winner_rate"] <= 78.0)]
+            df = df[(df["winner_rate"] >= 25.0) & (df["winner_rate"] <= 85.0)]
             
         df = df[df["big_net_inflow"] > 0]
 
@@ -2833,11 +2926,19 @@ def get_portrait_position_pick(top_n: int = 30, strategy: str = "left"):
         df_pool["portrait_details"] = [r["portrait_details"] for r in portrait_results]
 
         # ══════════════════════════════════════════════════════════════
-        # 层一：portrait_score >= 60（等级 ≥ B）
+        # 层一：portrait_score >= 50（等级 ≥ C+，牛市过渡期放宽至 50 分；若右侧则 45）
         # ══════════════════════════════════════════════════════════════
-        mask_l1      = df_pool["portrait_score"] >= 60
+        if strategy == "right":
+            l1_threshold = 45
+            grade_threshold = "等级 ≥ C+"
+        else:
+            l1_threshold = 50
+            grade_threshold = "等级 ≥ B/C+"
+
+        mask_l1      = df_pool["portrait_score"] >= l1_threshold
         df_l1_pass   = df_pool[mask_l1].copy()
         df_l1_reject = df_pool[~mask_l1].copy()
+        l1_remark    = f"portrait_score >= {l1_threshold}（{grade_threshold}）"
 
         # ══════════════════════════════════════════════════════════════
         # 层二：今日涨幅过滤与 K线防骗线（严格对照实证：左侧防追高/防中位高套，右侧防烂板/高位接盘）
@@ -2955,7 +3056,7 @@ def get_portrait_position_pick(top_n: int = 30, strategy: str = "left"):
             }
 
         picks       = [row_to_pick(r) for _, r in df_picks.iterrows()]
-        l1_rejects  = [row_to_reject(r, f"画像分 {round(safe_f(r.get('portrait_score')),1)} < 60（等级C/D·画像不符）") for _, r in df_l1_reject.iterrows()]
+        l1_rejects  = [row_to_reject(r, f"画像分 {round(safe_f(r.get('portrait_score')),1)} < {l1_threshold}（低于合格线·画像不符）") for _, r in df_l1_reject.iterrows()]
         l2_rejects  = [row_to_reject(r, r.get("reject_reason_l2", "条件不符")) for _, r in df_l2_reject.iterrows()]
         l3_rejects  = [row_to_reject(r, f"同行业「{r['sub_industry']}」已有更高分候选（行业分散原则）") for _, r in df_l3_reject.iterrows()]
 
@@ -2966,6 +3067,9 @@ def get_portrait_position_pick(top_n: int = 30, strategy: str = "left"):
                 "layer1_pass":   len(df_l1_pass),
                 "layer2_pass":   len(df_l2_pass),
                 "layer3_pass":   len(df_picks),
+                "layer1_threshold": l1_threshold,
+                "layer1_remark": l1_remark,
+                "strategy": strategy,
                 "layer1_reject": l1_rejects,
                 "layer2_reject": l2_rejects,
                 "layer3_reject": l3_rejects,

@@ -476,6 +476,27 @@ def main():
     elif mode == "jack":
         print(f"\n⚙️  [Jack Mode] 启动游资/散户自适应模拟路由回测 (回测最近 52 周)...")
         val_report, df_aligned = validate_factors(config_path)
+
+        # 数据完整性闸门阻断: 若 validate_factors 检测到违例且 block=true, 则跳过回测
+        integrity = val_report.get("_data_integrity", {})
+        if integrity and not integrity.get("passed", True):
+            cfg_block = integrity.get("block_backtest_on_violation", True)
+            if cfg_block:
+                print("=" * 60)
+                print("⛔ [Jack Mode] 回测因数据完整性违例已阻断，跳过本次回测")
+                print(f"   原因: {integrity.get('summary', '未知')}")
+                print("   请先运行 python3 scripts/repair_adj_factor.py 修复数据")
+                print("=" * 60)
+                final_report = {
+                    "run_mode": mode, "run_date": run_date,
+                    "blocked": True, "data_integrity": integrity
+                }
+                os.makedirs("agent", exist_ok=True)
+                with open(report_name, "w", encoding="utf-8") as f:
+                    json.dump(final_report, f, indent=4, ensure_ascii=False)
+                print(f"\n✅ Agent 流程结束，阻断报告已导出: {report_name}")
+                return
+
         from agent.backtester import run_jack_portfolio_backtest
         jack_metrics, route_summary = run_jack_portfolio_backtest(df_aligned, weeks_to_backtest=52, config_path=config_path)
         

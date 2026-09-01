@@ -344,9 +344,9 @@ export default function PortraitAnalysis() {
           {/* ═══════════════ TAB: 样本明细 ═══════════════ */}
           {activeTab === 'samples' && (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-              {/* 上涨样本 */}
-              <div style={{ background: '#151d30', border: '1px solid rgba(16,185,129,0.2)', borderRadius: 14, padding: '18px 20px' }}>
-                <h3 style={{ fontSize: 14, fontWeight: 700, color: '#10b981', margin: '0 0 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
+              {/* 上涨样本（A股规范：红涨） */}
+              <div style={{ background: '#151d30', border: '1px solid rgba(244,63,94,0.22)', borderRadius: 14, padding: '18px 20px' }}>
+                <h3 style={{ fontSize: 14, fontWeight: 700, color: '#f43f5e', margin: '0 0 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
                   <TrendingUp size={16} /> 近期最佳上涨样本 (Top 15)
                 </h3>
                 <div style={{ fontSize: 11, fontFamily: 'monospace', overflowX: 'auto' }}>
@@ -362,14 +362,16 @@ export default function PortraitAnalysis() {
                     <tbody>
                       {data.top_up_stocks?.map(s => {
                         const cfg = GRADE_CFG[s.portrait_grade] || GRADE_CFG.C
+                        const ret = s.ret_1d
+                        const retC = ret > 0 ? '#f43f5e' : ret < 0 ? '#10b981' : '#9ca3af'
                         return (
                           <tr key={`${s.ts_code}-${s.recommend_date}`} style={{ borderBottom: '1px solid #1a2540' }}>
                             <td style={{ padding: '6px 8px', color: '#c9d1d9' }}>
                               <div style={{ fontWeight: 700 }}>{s.name}</div>
                               <div style={{ color: '#8b949e', fontSize: 10 }}>{s.recommend_date?.slice(4)}</div>
                             </td>
-                            <td style={{ padding: '6px 8px', textAlign: 'right', color: '#10b981', fontWeight: 700 }}>
-                              {fmtRet(s.ret_1d)}
+                            <td style={{ padding: '6px 8px', textAlign: 'right', color: retC, fontWeight: 700 }}>
+                              {fmtRet(ret)}
                             </td>
                             <td style={{ padding: '6px 8px', textAlign: 'right' }}>
                               <span style={{ color: cfg.color, fontWeight: 700 }}>{cfg.emoji}{s.portrait_grade} {s.portrait_score}</span>
@@ -385,9 +387,9 @@ export default function PortraitAnalysis() {
                 </div>
               </div>
 
-              {/* 下跌样本 */}
-              <div style={{ background: '#151d30', border: '1px solid rgba(244,63,94,0.2)', borderRadius: 14, padding: '18px 20px' }}>
-                <h3 style={{ fontSize: 14, fontWeight: 700, color: '#f43f5e', margin: '0 0 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
+              {/* 下跌样本（A股规范：绿跌） */}
+              <div style={{ background: '#151d30', border: '1px solid rgba(16,185,129,0.22)', borderRadius: 14, padding: '18px 20px' }}>
+                <h3 style={{ fontSize: 14, fontWeight: 700, color: '#10b981', margin: '0 0 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
                   <TrendingDown size={16} /> 近期最深下跌样本 (反向参考)
                 </h3>
                 <div style={{ fontSize: 11, fontFamily: 'monospace', overflowX: 'auto' }}>
@@ -403,14 +405,16 @@ export default function PortraitAnalysis() {
                     <tbody>
                       {data.top_dn_stocks?.map(s => {
                         const cfg = GRADE_CFG[s.portrait_grade] || GRADE_CFG.C
+                        const ret = s.ret_1d
+                        const retC = ret > 0 ? '#f43f5e' : ret < 0 ? '#10b981' : '#9ca3af'
                         return (
                           <tr key={`${s.ts_code}-${s.recommend_date}`} style={{ borderBottom: '1px solid #1a2540' }}>
                             <td style={{ padding: '6px 8px', color: '#c9d1d9' }}>
                               <div style={{ fontWeight: 700 }}>{s.name}</div>
                               <div style={{ color: '#8b949e', fontSize: 10 }}>{s.recommend_date?.slice(4)}</div>
                             </td>
-                            <td style={{ padding: '6px 8px', textAlign: 'right', color: '#f43f5e', fontWeight: 700 }}>
-                              {fmtRet(s.ret_1d)}
+                            <td style={{ padding: '6px 8px', textAlign: 'right', color: retC, fontWeight: 700 }}>
+                              {fmtRet(ret)}
                             </td>
                             <td style={{ padding: '6px 8px', textAlign: 'right' }}>
                               <span style={{ color: cfg.color, fontWeight: 700 }}>{cfg.emoji}{s.portrait_grade} {s.portrait_score}</span>

@@ -157,7 +157,7 @@ function PickCard({ pick, strategy }) {
 
       <div style={{ display: 'flex', gap: 16, marginTop: 14, fontSize: 11, fontFamily: 'monospace', color: '#6b7280' }}>
         <span>筹码胜率 <span style={{ color: '#8b949e' }}>{pick.winner_rate}%</span></span>
-        <span>净流入 <span style={{ color: pick.big_net_inflow > 0 ? '#f43f5e' : pick.big_net_inflow < 0 ? '#10b981' : '#8b949e' }}>{pick.big_net_inflow > 0 ? '+' : ''}{pick.big_net_inflow}万</span></span>
+        <span>净流入 <span style={{ color: pick.big_net_inflow > 0 ? '#f43f5e' : pick.big_net_inflow < 0 ? '#10b981' : '#8b949e' }}>{pick.big_net_inflow > 0 ? '+' : ''}{pick.big_net_inflow}亿</span></span>
         <span>建仓评分 <span style={{ color: '#8b949e' }}>{pick.build_score}</span></span>
       </div>
     </div>
@@ -299,7 +299,7 @@ export default function PositionPick() {
     {
       icon: Shield, color: '#38bdf8',
       title: '层一：画像等级过滤',
-      desc: 'portrait_score ≥ 60（A级/B级）→ 通过',
+      desc: funnel.layer1_remark || `portrait_score ≥ ${funnel.layer1_threshold || (strategy === 'right' ? 45 : 50)}（C+ 级以上）→ 通过`,
       inCount: funnel.layer0_total || 0,
       outCount: funnel.layer1_pass || 0,
       rejectList: funnel.layer1_reject || [],
@@ -307,7 +307,7 @@ export default function PositionPick() {
     {
       icon: TrendingDown, color: '#f59e0b',
       title: '层二：短期热度过滤',
-      desc: strategy === 'right' ? '今日涨幅 ≤ 9.5%（防高位烂板）' : '今日涨幅 ≤ 5%（避免追高追板）',
+      desc: strategy === 'right' ? '今日涨幅 ≤ 9.5%（防高位烂板）' : '今日涨幅 ≤ 4.5%（避免追高追板）',
       inCount: funnel.layer1_pass || 0,
       outCount: funnel.layer2_pass || 0,
       rejectList: funnel.layer2_reject || [],
@@ -459,7 +459,7 @@ export default function PositionPick() {
                 <div style={{ background: '#151d30', border: '1px solid #222f4c', borderRadius: 14, padding: '18px 20px' }}>
                   <h4 style={{ fontSize: 13, fontWeight: 700, color: '#e6edf3', margin: '0 0 14px' }}>📖 {strategy === 'right' ? '右侧突破' : '左侧低吸'}策略说明</h4>
                   {strategy === 'right' ? [
-                    { icon: <Shield size={13} />, color: '#38bdf8', title: '层一·画像等级 ≥ B', desc: '右侧画像分 ≥ 60：获利盘极高（上方无压）· 短期动能强 · 游资极为活跃 · 大单主力抢筹' },
+                    { icon: <Shield size={13} />, color: '#38bdf8', title: '层一·画像等级 ≥ C+', desc: `右侧画像分 ≥ ${funnel.layer1_threshold || 45}：获利盘极高（上方无压）· 短期动能强 · 游资极为活跃 · 大单主力抢筹` },
                     { icon: <TrendingDown size={13} />, color: '#f59e0b', title: '层二·防烂板', desc: '今日涨幅 ≤ 9.5%。放宽涨幅限制以追逐强势，但避开可能被砸烂的高位涨停板' },
                     { icon: <Zap size={13} />, color: '#a78bfa', title: '层三·行业分散', desc: '同一细分行业最多 1 支，取画像分最高者留下。防止仓位集中板块，降低系统性风险' },
                   ].map(({ icon, color, title, desc }) => (
@@ -470,8 +470,8 @@ export default function PositionPick() {
                       <div style={{ fontSize: 11, color: '#8b949e', lineHeight: 1.6 }}>{desc}</div>
                     </div>
                   )) : [
-                    { icon: <Shield size={13} />, color: '#38bdf8', title: '层一·画像等级 ≥ B', desc: 'T+1 实证5维画像分 ≥ 60：低位筹码（获利盘 ≤ 20%）· PE合理（≤ 40）· 游资未过热 · 筹码集中 · 因子信号强' },
-                    { icon: <TrendingDown size={13} />, color: '#f59e0b', title: '层二·短期热度过滤', desc: '今日涨幅 ≤ 5%。实证：当日涨 >5% 的股票 T+1 回撤概率显著提升，追高胜率不足 40%' },
+                    { icon: <Shield size={13} />, color: '#38bdf8', title: '层一·画像等级 ≥ C+', desc: `T+1 实证5维画像分 ≥ ${funnel.layer1_threshold || 50}：位置分/估值分/温度分/筹码分/因子分 加权综合，实证过线股票 T+1 上涨概率显著提升` },
+                    { icon: <TrendingDown size={13} />, color: '#f59e0b', title: '层二·短期热度过滤', desc: '今日涨幅 ≤ 4.5%。实证：当日涨 >4.5% 的股票 T+1 回撤概率显著提升，追高胜率不足 40%' },
                     { icon: <Zap size={13} />, color: '#a78bfa', title: '层三·行业分散', desc: '同一细分行业最多 1 支，取画像分最高者留下。防止仓位集中板块，降低系统性风险' },
                   ].map(({ icon, color, title, desc }) => (
                     <div key={title} style={{ marginBottom: 14, paddingBottom: 14, borderBottom: '1px solid #1a2540' }}>

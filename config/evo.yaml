@@ -1,0 +1,141 @@
+# -*- coding: utf-8 -*-
+# evo.yaml —— EVO 进化层全局配置（与 thresholds.yaml 完全独立）
+# =================================================================
+# 控制 8 大进化模块的启用状态和超参数；支持热加载（按 mtime 检测）
+# 修改后无需重启：services.evo._common.EvoConfig 会自动重加载
+#
+# 版本说明：
+#   v1.0  —  8 大进化模块骨架版，各模块默认开关按阶段化推进配置
+
+version: "1.0"
+note: "EVO 进化层总开关：动态权重/交叉因子/拥挤度/ML排序/预期差/文本因子/Graham过滤/衰减预警"
+
+# ===================== P0 必做模块 =====================
+
+dynamic_weights:
+  enabled: true
+  ic_window: 20                    # IC 滚动窗口（交易日）
+  fwd_period: 5                    # IC 用未来 N 日收益率（周频调权节奏）
+  weight_lookback_days: 160        # 引擎每次回看多少个交易日计算 IC 序列
+  snapshot_days: 20                # 每次运行写最近 N 个可算 IC 日的权重快照
+  min_ir_for_weight: 0.10          # ICIR < 此值 → 当日权重置 0
+  max_single_factor_weight: 0.30   # 单因子权重上限（防止过度集中）
+  min_periods_for_ic: 10           # 计算 IC 所需最少样本数
+  neutralize_by_regime: true       # 是否按市场状态分组计算 IC
+  zero_negative_ic: true           # IC 为负的因子是否直接置 0 权重
+
+cross_factors:
+  enabled: true
+  # 10 个交叉/交互因子 —— 启用状态（可逐个验证效果）
+  factors:
+    inter_quality_momentum: true         # ROE 排名 × 20日动量排名   （高质量 + 强趋势）
+    inter_value_excess: true             # PB 倒数排名 × 超额收益排名 （低估值 + 跑赢市场）
+    inter_chip_volume: true              # 筹码集中度排名 × 量比排名  （筹码集中 + 放量启动）
+    inter_smart_defense: true            # 北向净流入排名 × 低换手标记（聪明钱 + 非拥挤）
+    inter_overshoot_reversal: true       # 获利盘低位分 × 超跌（负5日收益）  （低位反转）
+    triple_value_mom_quality: true       # PB倒数 × 20日动量 × ROE  三重交互
+    inter_mom_skew_neg: true             # 10日正动量 × 20日负偏度 （上涨+左偏肥尾即跌少涨多）
+    inter_lowvol_profit: true            # 低波动率(倒数)排名 × 获利盘比例排名（稳+筹码好）
+    inter_turnover_reversal: true        # 高换手率排名 × 负5日收益（放量超跌反弹）
+    inter_chip_break_right: true         # 高获利盘排名 × 大单净流入（突破+资金确认）
+
+crowding_monitor:
+  enabled: true
+  corr_window: 10                  # 因子截面相关性观察窗口
+  half_weight_threshold: 0.70      # 拥挤度 > 0.70 → 权重 × 0.5
+  disable_threshold: 0.85          # 拥挤度 > 0.85 → 权重置 0
+  market_cap_top5_share_alert: 0.45  # 前5%个股成交额占比 > 45% → 全局拥挤警报
+
+# ===================== P1 高价值模块 =====================
+
+lambdarank:
+  enabled: false                   # 默认关闭（等 _evo 表数据积累 ≥3 个月后开启）
+  label_horizon: 10                # 预测未来 N 日收益率排序
+  features_subset: null            # null = 用全部进化层因子；可列白名单
+  retrain_cron: "0 2 * * 0"        # 每周日 02:00 重训练
+  learning_rate: 0.05
+  num_leaves: 31
+  num_trees: 600
+  top_n_inference: 50              # 推理时返回 Top N
+
+surprise_factors:
+  enabled: true
+  # 三类代理预期差因子（无需外部数据源，用现有行情/换手/价格构造）
+  price_vote_gap: true             # 资金预期差投票（20日均价偏离 × 放量）
+  earnings_gap_flag: true          # 跳空缺口标记（财报后 >3% 跳空 + 放量）
+  roe_qoq_zscore: true             # ROE 环比变化 Z-Score（近似超预期）
+
+# ===================== P2 长期护城河模块 =====================
+
+text_factors:
+  enabled: true
+  mode: "rules"                    # "rules"（P0 无LLM）→ "llm_api"（P1）→ "llm_local"（P2）
+  fetch:                           # M6.1 采集层（P0 双源：巨潮公告 + 新浪 7x24 快讯）
+    cninfo_pages: 10               # 巨潮分页数（每页 30 条公告标题）
+    sina7x24_pages: 5              # 新浪 7x24 快讯页数（每页 100 条）
+    request_interval_sec: 2.0      # 限速：请求间隔（合规底线）
+    timeout_sec: 15
+    max_title_len: 500
+  aggregate_window_days: 6        # 聚合窗口（自然日，含跨周末；0.6^天衰减稀释远期）
+  llm_provider: null               # 预留：openai / qwen / glm / deepseek
+  llm_api_base: null
+  llm_api_key_env: null            # 从环境变量读 key 的变量名
+  # rules 模式下的关键词库（开源可直接跑）
+  keyword_libraries:
+    bullish: ["超预期", "业绩大增", "扭亏", "高增长", "订单饱满", "扩产", "技术突破", "签署协议", "回购", "增持"]
+    bearish: ["下修业绩", "预亏", "立案", "监管", "减持", "商誉减值", "亏损", "退市风险", "质押"]
+    catalyst: ["政策", "补贴", "规划", "试点", "涨价", "AI", "算力", "出海", "国产替代"]
+
+graham_filter:
+  enabled: true
+  checks:
+    size_min_circ_mv_billion: 5.0     # ① 流通市值 ≥ 50 亿（A 股适当放宽）
+    current_ratio_min: 1.2            # ② 流动比率 ≥ 1.2（短期偿债；可用速动比率代理）
+    pe_ttm_max: 25.0                  # ③ PE(TTM) ≤ 25
+    pe_pb_product_max: 30.0           # ④ PE × PB ≤ 30（Graham 原版 22.5，A 股放宽到 30）
+    roe_streak_years: 3               # ⑤ 连续 N 年正 ROE（数据缺失降级：3 年平均 ROE > 6%）
+    dividend_record_min_years: 3      # ⑥ 连续 N 年分红（降级：过去 5 年内至少有分红记录）
+    earnings_growth_10y_min_pct: 33.0 # ⑦ 10 年内盈利增长 ≥ 33%（降级：5 年增长 ≥ 20%）
+  scoring:
+    bonus_min_checks: 4               # 通过 ≥ 4 项 → 画像分 + bonus
+    bonus_points: 5.0
+    penalty_max_checks: 1             # 通过 ≤ 1 项 → 画像分 - penalty
+    penalty_points: 10.0
+
+# ===================== P3 监控模块 =====================
+
+lambdarank:
+  enabled: true                   # M5.3 起开推理层（每日预测落库+SHAP+PSI）；组合端 β 仍由 M5.4 灰度控制
+  fwd_period: 5                   # 与 dynamic_weights.fwd_period 对齐，避免周期错配
+  label_bins: 10                  # 当日截面未来收益分 10 档（0~9，LambdaRank gain 标签）
+  train_end: "20241231"           # ≤ 此日为训练段（约 70%）
+  valid_end: "20250630"           # (train_end, valid_end] 为验证段；之后为测试段（只评估一次）
+  num_leaves: 63
+  learning_rate: 0.05
+  num_boost_round: 600
+  early_stopping_rounds: 50
+  retrain: "monthly"              # 每月第一个交易日重训
+  psi_red_threshold: 0.25         # 特征/预测分布漂移 PSI 红警阈值
+
+decay_monitor:
+  enabled: true
+  rolling_ic_window: 20             # 20 日滚动 RankIC
+  yellow_ic_min: 0.010              # < 0.01 → 黄色警告
+  red_consecutive_negative_days: 5  # 连续 N 天 IC < 0 → 红色警告
+  auto_disable_on_red: false        # 红警时是否自动从因子池剔除（先观察，默认关）
+  check_cron: "0 1 * * 1-5"         # 工作日 01:00 扫描
+
+# ===================== 多策略融合（portfolio 最终合成权重）=====================
+# score = α*dynamic + β*ml + γ*graham + δ*surprise - ε*crowding_penalty
+portfolio_mixer:
+  dynamic_weight_alpha: 0.50
+  lambdarank_beta: 0.10   # M5.4 灰度第一步（0→0.1）；观察 3-5 天预测质量后再调至 0.30
+  graham_gamma: 0.10
+  surprise_delta: 0.10
+  crowding_penalty_eps: 0.15
+  min_classic_overlap_ratio: 0.20  # EVO Top10 与经典 Top10 重合度 < 20% → 自动熔断降级
+
+# ===================== 前端 EVO 开关默认值（后端上报用）=====================
+frontend:
+  show_compare_by_default: true    # 进入 /evo 默认展示 A/B 对比页
+  highlight_diffs: true            # 对比页高亮差异推荐

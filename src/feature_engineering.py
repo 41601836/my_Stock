@@ -43,18 +43,24 @@ def calculate_stock_factors(db_path=None):
             p.low, 
             p.close, 
             p.vol,
-            IFNULL(sf.adj_factor, p.adj_factor) AS adj_factor, 
-            b.turnover_rate, 
-            b.pe AS pe_ttm, 
-            b.pb, 
-            b.circ_mv,
+            -- adj_factor 三级兜底：
+            -- 1) 优先 stk_factor.adj_factor（每日官方后复权因子，主数据）；
+            -- 2) 回退 daily_prices.adj_factor（种子表自带，通常全 NULL，已兼容处理）；
+            -- 3) 终极回退 1.0（stk_factor 某交易日漏采全市场，如 20260825 仅 10 行时，
+            --    用 1.0 = 不复权，保证 close_adj 不会因单个交易日而向下污染后续 20 个交易日的
+            --    rolling(20) 波动率 / 收益指标，避免 5500+ 个股全部被 dropna 误删）。
+            COALESCE(sf.adj_factor, p.adj_factor, 1.0) AS adj_factor,
+            IFNULL(b.turnover_rate, 0.0) AS turnover_rate,
+            IFNULL(b.pe, 0.0)             AS pe_ttm,
+            IFNULL(b.pb, 0.0)             AS pb,
+            IFNULL(b.circ_mv, 0.0)        AS circ_mv,
             IFNULL(m.buy_elg_amount, 0.0) AS buy_elg, 
             IFNULL(m.sell_elg_amount, 0.0) AS sell_elg
         FROM daily_prices p
         INNER JOIN daily_basic b ON p.ts_code = b.ts_code AND p.trade_date = b.trade_date
         LEFT JOIN moneyflow m ON p.ts_code = m.ts_code AND p.trade_date = m.trade_date
         LEFT JOIN stk_factor sf ON p.ts_code = sf.ts_code AND p.trade_date = sf.trade_date
-        WHERE p.trade_date >= '20250101'
+        WHERE p.trade_date >= '20200101'
         ORDER BY p.ts_code, p.trade_date;
     """
     
@@ -215,9 +221,9 @@ def calculate_stock_factors(db_path=None):
     # --- 整理与保存 ---
     print("ℹ️ [Feature] 特征计算完成，正在过滤 NaN 行并持久化...")
     df = df.rename(columns={"ts_code": "stock_code"})
-    
+
     cols_to_save = [
-        "trade_date", "stock_code", 
+        "trade_date", "stock_code",
         "return_5d", "return_20d", "return_60d", "excess_return_20d",
         "volatility_20d", "volatility_60d", "skewness_20d", "max_drawdown_20d", "atr_ratio",
         "pe_ttm", "pb", "roe", "turnover_rate",
@@ -231,9 +237,16 @@ def calculate_stock_factors(db_path=None):
         # 三维资金信号复合因子
         "hot_money_score", "strong_control_score", "main_force_score"
     ]
-    
-    # 丢弃前置 120 天 NaN 干扰
-    df_clean = df[cols_to_save].dropna(subset=["volatility_120d", "return_120d"]).reset_index(drop=True)
+
+    # 关键：策略核心只消费 return_5/10/20d、volatility_20/60d、turnover_20d、三维资金复合分、quality；
+    # 不依赖 120d 窗口。如果强制 dropna(subset=["volatility_120d","return_120d"])
+    # 会在"全量+近期"场景下把 5500 只股票过滤到 ~4100 只（6 年数据不够 120d 的 IPO 新股 + 停牌股）。
+    # 因此改为：只要求 20d 关键窗口 + 三维复合分非空，120d 保留 NaN（策略读取时已做 fillna）。
+    core_cols = ["return_20d", "volatility_20d", "turnover_rate_20d",
+                 "hot_money_score", "strong_control_score", "main_force_score"]
+    df_clean = df[cols_to_save].dropna(subset=core_cols).reset_index(drop=True)
+    # 再做一次后验：过滤掉 20250101 之前只有极少数窗口的史前数据（首日 1 日都没窗口）
+    df_clean = df_clean[df_clean["trade_date"] >= "20200301"].reset_index(drop=True)
     
     table_name = "factor_values"
     try:
