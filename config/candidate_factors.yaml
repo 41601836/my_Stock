@@ -1,5 +1,4 @@
 candidate_factors:
-# ── 传统量价因子 (24) ──
 - return_5d
 - return_10d
 - return_20d
@@ -24,7 +23,6 @@ candidate_factors:
 - profit_ratio_estimate
 - chip_concentration
 - vol_ratio
-# ── v3.1 新增因子 (9 快因子) ──
 - overnight_return_5d
 - intraday_return_5d
 - overnight_intraday_gap_5d

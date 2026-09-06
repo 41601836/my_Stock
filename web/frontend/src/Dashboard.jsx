@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   Activity, TrendingUp, Target, Zap, RefreshCw,
   CheckCircle2, XCircle, AlertCircle, ChevronRight,
+  Play, Square, RotateCcw, Terminal,
 } from 'lucide-react'
 
 const API_BASE = '/api/dashboard'
@@ -53,6 +54,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [running, setRunning] = useState(false)
   const [error, setError] = useState(null)
+  const [agentBusy, setAgentBusy] = useState(false)
 
   const fetchData = useCallback(async () => {
     try {
@@ -73,6 +75,13 @@ export default function Dashboard() {
 
   useEffect(() => { fetchData() }, [fetchData])
 
+  // Agent 运行中时每 10s 轮询状态
+  useEffect(() => {
+    if (data?.agent_status !== 'RUNNING') return
+    const timer = setInterval(fetchData, 10000)
+    return () => clearInterval(timer)
+  }, [data?.agent_status])
+
   const runDaily = async () => {
     setRunning(true)
     try {
@@ -82,6 +91,47 @@ export default function Dashboard() {
       setError(e.message)
     } finally {
       setRunning(false)
+    }
+  }
+
+  const startAgent = async () => {
+    setAgentBusy(true)
+    try {
+      const r = await fetch('/api/agent/cruise/start', { method: 'POST' })
+      const d = await r.json()
+      if (d.status === 'error' || d.status === 'busy') {
+        setError(d.message)
+      }
+      await fetchData()
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setAgentBusy(false)
+    }
+  }
+
+  const stopAgent = async () => {
+    setAgentBusy(true)
+    try {
+      await fetch('/api/agent/cruise/stop', { method: 'POST' })
+      await new Promise(r => setTimeout(r, 2000))
+      await fetchData()
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setAgentBusy(false)
+    }
+  }
+
+  const resetAgent = async () => {
+    setAgentBusy(true)
+    try {
+      await fetch('/api/agent/cruise/reset', { method: 'POST' })
+      await fetchData()
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setAgentBusy(false)
     }
   }
 
@@ -127,14 +177,49 @@ export default function Dashboard() {
             选股 → 验证 → 归因 → 调参 · 良性闭环系统
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <span className={`text-xs px-3 py-1.5 rounded-full font-semibold ${
-            agentStatus === 'RUNNING'
-              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-              : 'bg-slate-500/20 text-slate-400 border border-slate-500/30'
-          }`}>
-            Agent {agentStatus}
-          </span>
+        <div className="flex items-center gap-2">
+          {/* Agent 状态 + 控制 */}
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-[#0f1626] border border-[#1e293b]">
+            <Terminal size={14} className={
+              agentStatus === 'RUNNING' ? 'text-emerald-400' : 'text-slate-500'
+            } />
+            <span className={`text-xs font-semibold ${
+              agentStatus === 'RUNNING' ? 'text-emerald-400' : 'text-slate-400'
+            }`}>
+              Agent {agentStatus}
+            </span>
+            <div className="w-px h-4 bg-[#1e293b] mx-1" />
+            {agentStatus === 'RUNNING' ? (
+              <button
+                onClick={stopAgent}
+                disabled={agentBusy}
+                title="停止巡航"
+                className="flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-red-500/15 text-red-400 hover:bg-red-500/25 border border-red-500/20 transition disabled:opacity-40"
+              >
+                <Square size={11} />
+                {agentBusy ? '停止中...' : '停止'}
+              </button>
+            ) : (
+              <button
+                onClick={startAgent}
+                disabled={agentBusy}
+                title="启动巡航"
+                className="flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 border border-emerald-500/20 transition disabled:opacity-40"
+              >
+                <Play size={11} />
+                {agentBusy ? '启动中...' : '启动'}
+              </button>
+            )}
+            <button
+              onClick={resetAgent}
+              disabled={agentBusy}
+              title="重置巡航"
+              className="flex items-center justify-center w-6 h-5 rounded text-xs bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 border border-amber-500/20 transition disabled:opacity-40"
+            >
+              <RotateCcw size={10} />
+            </button>
+          </div>
+          {/* 每日闭环 */}
           <button
             onClick={runDaily}
             disabled={running}
