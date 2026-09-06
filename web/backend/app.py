@@ -859,6 +859,22 @@ except Exception as _res_exc:
         f"⚠️ [Resonance] 四重共振策略路由挂载失败（经典系统照常运行）：{_res_exc}"
     )
 
+# ═══════════════════════════════════════════════════════════
+# 指挥中心路由（平行层，零侵入）
+# ═══════════════════════════════════════════════════════════
+try:
+    from routers import dashboard_router
+    app.include_router(dashboard_router)
+    import logging as _dash_logging
+    _dash_logging.getLogger(__name__).info(
+        "✅ [Dashboard] 指挥中心路由已挂载：/api/dashboard/*（平行层，经典路由不受影响）"
+    )
+except Exception as _dash_exc:
+    import logging as _dash_logging2
+    _dash_logging2.getLogger(__name__).warning(
+        f"⚠️ [Dashboard] 指挥中心路由挂载失败（经典系统照常运行）：{_dash_exc}"
+    )
+
 
 # ══════════════════════════════════════════════════════════════════
 # 生产环境：托管前端静态文件（dist）—— 必须放在所有 API 路由之后

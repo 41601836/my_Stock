@@ -15,5 +15,6 @@ from .evo import router as evo_router
 from .factor_lib import router as factor_lib_router
 from .multi_factor_202609 import router as mf202609_router
 from .resonance import router as resonance_router
+from .dashboard import router as dashboard_router
 
-__all__ = ["evo_router", "factor_lib_router", "mf202609_router", "resonance_router"]
+__all__ = ["evo_router", "factor_lib_router", "mf202609_router", "resonance_router", "dashboard_router"]

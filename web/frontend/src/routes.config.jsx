@@ -54,7 +54,7 @@ export const NAV_GROUPS = [
 
 export const ROUTES = [
   // ── 全局总览 ──────────────────────────────────────────────
-  { path: '/',          label: '核心策略仪表盘', title: '策略实时仪表盘',     group: 'overview', Icon: LayoutDashboard, Component: Dashboard,
+  { path: '/',          label: '指挥中心', title: '指挥中心 · 选股验证闭环',     group: 'overview', Icon: LayoutDashboard, Component: Dashboard,
     props: (ctx) => ({ marketStatus: ctx.marketStatus }) },
   { path: '/overview',  label: '市场宏观全览',   title: '市场宏观全览',       group: 'overview', Icon: Globe, Component: Overview },
 

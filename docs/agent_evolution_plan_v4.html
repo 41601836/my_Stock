@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent 进化日志升级方案 v4 — 原理梳理与进化路径</title>
+<style>
+  :root {
+    --bg: #0a0e1a;
+    --card: #0f1626;
+    --card2: #131c2f;
+    --border: #1e293b;
+    --border2: #334155;
+    --text: #e2e8f0;
+    --text2: #94a3b8;
+    --text3: #64748b;
+    --accent: #3b82f6;
+    --accent2: #8b5cf6;
+    --green: #10b981;
+    --red: #ef4444;
+    --amber: #f59e0b;
+    --cyan: #06b6d4;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    line-height: 1.7;
+    padding: 40px 20px;
+  }
+  .container { max-width: 1100px; margin: 0 auto; }
+  h1 {
+    font-size: 28px; font-weight: 700;
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    margin-bottom: 8px;
+  }
+  .subtitle { color: var(--text2); font-size: 14px; margin-bottom: 40px; }
+  h2 {
+    font-size: 22px; font-weight: 600; color: var(--text);
+    margin: 40px 0 20px; padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px;
+  }
+  h2 .num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 32px; height: 32px; border-radius: 8px;
+    background: linear-gradient(135deg, #1e293b, #334155);
+    font-size: 16px; color: var(--accent);
+    border: 1px solid var(--border2);
+  }
+  h3 { font-size: 17px; font-weight: 600; margin: 24px 0 12px; color: var(--text); }
+  p { color: var(--text2); margin-bottom: 12px; }
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 24px; margin-bottom: 20px;
+  }
+  .card-title {
+    font-size: 15px; font-weight: 600; color: var(--accent);
+    margin-bottom: 12px; display: flex; align-items: center; gap: 8px;
+  }
+  .badge {
+    display: inline-block; padding: 2px 10px; border-radius: 6px;
+    font-size: 12px; font-weight: 600;
+  }
+  .badge-green { background: rgba(16,185,129,.15); color: var(--green); border: 1px solid rgba(16,185,129,.3); }
+  .badge-red { background: rgba(239,68,68,.15); color: var(--red); border: 1px solid rgba(239,68,68,.3); }
+  .badge-amber { background: rgba(245,158,11,.15); color: var(--amber); border: 1px solid rgba(245,158,11,.3); }
+  .badge-cyan { background: rgba(6,182,212,.15); color: var(--cyan); border: 1px solid rgba(6,182,212,.3); }
+  .badge-purple { background: rgba(139,92,246,.15); color: var(--accent2); border: 1px solid rgba(139,92,246,.3); }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+  th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); font-size: 13px; }
+  th { color: var(--text3); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .5px; }
+  td { color: var(--text2); }
+  td code, p code {
+    background: #0d1117; color: #79c0ff; padding: 2px 6px;
+    border-radius: 4px; font-family: 'SF Mono', monospace; font-size: 12px;
+  }
+  .flow-box {
+    background: #0d1117; border: 1px solid var(--border);
+    border-radius: 8px; padding: 16px; margin: 12px 0;
+    font-family: 'SF Mono', monospace; font-size: 12px;
+    color: var(--text2); white-space: pre; overflow-x: auto;
+  }
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin: 16px 0; }
+  .stat-box {
+    background: var(--card2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 16px; text-align: center;
+  }
+  .stat-val { font-size: 24px; font-weight: 700; margin: 4px 0; }
+  .stat-label { font-size: 12px; color: var(--text3); }
+  .section-gap { height: 20px; }
+  .toc {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 20px 24px; margin-bottom: 40px;
+  }
+  .toc-title { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 12px; }
+  .toc ul { list-style: none; padding-left: 0; }
+  .toc li { padding: 4px 0; font-size: 13px; }
+  .toc a { color: var(--text2); text-decoration: none; }
+  .toc a:hover { color: var(--accent); }
+  .problem-item {
+    display: flex; gap: 12px; padding: 12px;
+    background: var(--card2); border: 1px solid var(--border);
+    border-radius: 8px; margin-bottom: 8px;
+  }
+  .problem-icon { font-size: 20px; flex-shrink: 0; }
+  .problem-text { flex: 1; }
+  .problem-text strong { color: var(--text); }
+  .problem-text span { color: var(--text3); font-size: 12px; }
+  .evolution-card {
+    background: linear-gradient(135deg, var(--card), var(--card2));
+    border: 1px solid var(--border2); border-radius: 12px;
+    padding: 20px; margin-bottom: 16px;
+  }
+  .evolution-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .evolution-title { font-size: 16px; font-weight: 600; color: var(--text); }
+  .evolution-body { color: var(--text2); font-size: 14px; }
+  .evolution-body ul { padding-left: 20px; margin: 8px 0; }
+  .evolution-body li { margin-bottom: 4px; }
+  .phase-tag {
+    display: inline-block; padding: 3px 12px; border-radius: 6px;
+    font-size: 11px; font-weight: 700; letter-spacing: .5px;
+  }
+  .phase-p1 { background: rgba(59,130,246,.15); color: var(--accent); }
+  .phase-p2 { background: rgba(139,92,246,.15); color: var(--accent2); }
+  .phase-p3 { background: rgba(16,185,129,.15); color: var(--green); }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>Agent 进化日志升级方案 v4</h1>
+<p class="subtitle">原理梳理 → 问题诊断 → 进化路径 | 2026-09-06</p>
+
+<div class="toc">
+  <div class="toc-title">目录</div>
+  <ul>
+    <li><a href="#part1">一、现有系统原理梳理</a></li>
+    <li><a href="#part2">二、问题诊断：为什么超额卡玛全为负？</a></li>
+    <li><a href="#part3">三、进化建议与方案</a></li>
+    <li><a href="#part4">四、分阶段实施路线</a></li>
+  </ul>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+
+<h2 id="part1"><span class="num">1</span>现有系统原理梳理</h2>
+
+<h3>1.1 系统架构总览</h3>
+
+<p>当前 Agent 自主进化巡航系统是一个 <strong>暴力网格搜索 + 单目标优化</strong> 框架，核心流程如下：</p>
+
+<div class="flow-box">┌──────────────────────────────────────────────────────────────┐
+│                    Agent 自主进化巡航系统                       │
+├──────────────────────────────────────────────────────────────┤
+│                                                                │
+│  1. 生成 25 组因子组合 (从 24 个候选因子中随机拼装)              │
+│     └─ random.Random(42) 固定种子，3-5 因子/组                   │
+│                                                                │
+│  2. 超参数网格: top_n = [20, 10, 30]                            │
+│     └─ 25 组 × 3 档 = 75 个网格点                              │
+│                                                                │
+│  3. 每个网格点执行完整流程:                                      │
+│     ├─ validate_factors()   → IC 衰减校验 (VALID/WARNING/INVALID)│
+│     ├─ search_new_factors() → 实验因子搜索 (IC > 0.025)          │
+│     └─ recommend_adaptive_portfolio()                           │
+│         ├─ 原组合回测 (208 周)                                   │
+│         ├─ 新组合回测 (208 周)                                   │
+│         └─ 多状态路由回测                                        │
+│             └─ excess_calmar_ratio = 超额年化收益 / |超额最大回撤| │
+│                                                                │
+│  4. 达标判定: excess_calmar >= 0.50 → 保存权重 + 写回 config    │
+│     未达标 → 自动部署全局最优 (或稳健性闸门拦截)                  │
+│                                                                │
+│  5. 稳健性闸门: 同一组合三档 top_n 最小值 >= 0 才可入选          │
+│                                                                │
+│  熔断: max_loops=100 或 timeout=24h                            │
+└──────────────────────────────────────────────────────────────┘</div>
+
+<h3>1.2 核心组件</h3>
+
+<table>
+<tr><th>组件</th><th>文件</th><th>作用</th></tr>
+<tr><td><code>run_agent.py</code></td><td>主入口</td><td>巡航循环 + 网格搜索 + 断点续跑 + 心跳</td></tr>
+<tr><td><code>validator.py</code></td><td>因子校验</td><td>Rank IC 衰减检测：基准期 vs 近 52 周</td></tr>
+<tr><td><code>searcher.py</code></td><td>因子搜索</td><td>实验池 IC 筛选 + 共线因子剔除</td></tr>
+<tr><td><code>recommender.py</code></td><td>组合推荐</td><td>新旧组合平行回测 + 超额卡玛决策</td></tr>
+<tr><td><code>backtester.py</code></td><td>回测引擎</td><td>贝塔剥离 + 防御切换 + 超额卡玛计算</td></tr>
+<tr><td><code>performance.py</code></td><td>前端服务</td><td>读取 JSON 报告 → /api/agent</td></tr>
+<tr><td><code>Logs.jsx</code></td><td>前端页面</td><td>/logs 展示轨迹、日志、战果</td></tr>
+</table>
+
+<h3>1.3 因子空间</h3>
+
+<div class="card">
+<div class="card-title">当前候选因子池 (24 个)</div>
+<table>
+<tr><th>类别</th><th>因子</th><th>数量</th></tr>
+<tr><td>动量类</td><td>return_5d, return_10d, return_20d, return_60d, return_120d, excess_return_20d</td><td>6</td></tr>
+<tr><td>波动类</td><td>volatility_10d, volatility_20d, volatility_60d, volatility_120d, skewness_20d, max_drawdown_20d, max_drawdown_60d, atr_ratio</td><td>8</td></tr>
+<tr><td>市场类</td><td>turnover_rate, turnover_rate_5d, turnover_rate_20d, north_net_inflow_ratio, vol_ratio</td><td>5</td></tr>
+<tr><td>估值类</td><td>pe_ttm, pb, roe</td><td>3</td></tr>
+<tr><td>其他</td><td>profit_ratio_estimate, chip_concentration</td><td>2</td></tr>
+</table>
+</div>
+
+<h3>1.4 评分指标</h3>
+
+<div class="stat-grid">
+<div class="stat-box">
+<div class="stat-val" style="color: var(--accent)">excess_calmar</div>
+<div class="stat-label">超额卡玛比率<br>唯一优化目标</div>
+</div>
+<div class="stat-box">
+<div class="stat-val" style="color: var(--amber)">0.50</div>
+<div class="stat-label">达标阈值<br>超额卡玛 ≥ 0.50</div>
+</div>
+<div class="stat-box">
+<div class="stat-val" style="color: var(--cyan)">208 周</div>
+<div class="stat-label">回测周期<br>约 4 年</div>
+</div>
+<div class="stat-box">
+<div class="stat-val" style="color: var(--accent2)">75</div>
+<div class="stat-label">网格点数<br>25 组 × 3 档</div>
+</div>
+</div>
+
+<h3>1.5 决策逻辑</h3>
+
+<div class="flow-box">excess_calmar >= 0.50 且 新 > 旧 且 有新因子
+    → RECOMMENDED_NEW_COMBINATION (保存权重 + 写回 config)
+
+excess_calmar < 0.50 或 新 <= 旧
+    → RETAIN_ORIGINAL_COMBINATION (维持原样)
+
+稳健性闸门: 三档 top_n 最小值 >= 0
+    → 通过 → 入选全局最优
+    → 不通过 → 拦截，不部署
+
+兜底: 全部未达标 → 自动部署全局最优 (如果闸门关闭)</div>
+
+<!-- ═══════════════════════════════════════════ -->
+
+<h2 id="part2"><span class="num">2</span>问题诊断：为什么超额卡玛全为负？</h2>
+
+<p>从截图看，最近 10 次网格测试超额卡玛全部为负（-0.2885 ~ -0.3539），全局最优 -0.9684。这不是偶然的，是系统性问题：</p>
+
+<div class="problem-item">
+<div class="problem-icon">🔴</div>
+<div class="problem-text">
+<strong>因子空间陈旧、维度不足</strong><br>
+<span>24 个候选因子全是传统量价因子（动量、波动、换手率），没有利用 v3.1 新增的 15 个高维因子（Amihud 非流动性、GK 波动率、隔夜/日内分离、CYQ 筹码分布、板块强度、情绪复合）。因子间高度共线，信息增量为零。在当前市场环境下，传统量价因子已严重衰减。</span>
+</div>
+</div>
+
+<div class="problem-item">
+<div class="problem-icon">🔴</div>
+<div class="problem-text">
+<strong>搜索策略原始：纯随机网格</strong><br>
+<span>random.Random(42) 固定种子生成 25 组组合，没有任何自适应学习。不知道哪些因子组合方向好，每轮都从头开始。没有贝叶斯优化、遗传算法、或强化学习。75 个网格点对于 24 选 4-5 的组合空间（C(24,4)=10626）覆盖率不到 1%。</span>
+</div>
+</div>
+
+<div class="problem-item">
+<div class="problem-icon">🟡</div>
+<div class="problem-text">
+<strong>单目标优化，信息利用率低</strong><br>
+<span>只看 excess_calmar_ratio 一个指标。IC、ICIR、胜率、最大回撤深度、夏普比率等都被忽略。一个组合可能 IC 很高但卡玛为负（超额收益为正但回撤较大），直接被判死刑。没有多目标 Pareto 前沿。</span>
+</div>
+</div>
+
+<div class="problem-item">
+<div class="problem-icon">🟡</div>
+<div class="problem-text">
+<strong>无因子中性化</strong><br>
+<span>原始因子值未做行业/市值中性化。turnover_rate、pb 等因子在不同行业、不同市值的股票间差异巨大，不做中性化等于在做行业/市值暴露，不是纯 Alpha。P1 已经实现了 FactorNeutralizer 但 Agent 没有接入。</span>
+</div>
+</div>
+
+<div class="problem-item">
+<div class="problem-icon">🟡</div>
+<div class="problem-text">
+<strong>无共振策略整合</strong><br>
+<span>v3.1 已实现四重共振引擎（筹码×资金×板块×情绪），但 Agent 巡航完全不使用。共振策略的维度评分可以作为组合优化的多目标之一，但当前系统完全没有这个维度。</span>
+</div>
+</div>
+
+<div class="problem-item">
+<div class="problem-icon">🟡</div>
+<div class="problem-text">
+<strong>无防过拟合校验</strong><br>
+<span>P4 已实现 Purged Walk-Forward CV + IC 半衰期 + 三段审计，但 Agent 巡航不使用。208 周回测可能严重过拟合——在历史数据上找到的"最优"组合可能只是数据噪声。没有样本内外对比、没有置换检验。</span>
+</div>
+</div>
+
+<div class="problem-item">
+<div class="problem-icon">🟡</div>
+<div class="problem-text">
+<strong>EVO 层与 Agent 层割裂</strong><br>
+<span>EVO 进化层有动态权重、交叉因子、拥挤度、Graham 评分、LambdaRank ML、文本情绪等能力，但 Agent 巡航完全不调用这些。两套系统各自为战，EVO 的因子不在候选池里，Agent 的因子不在 EVO 表里。</span>
+</div>
+</div>
+
+<div class="problem-item">
+<div class="problem-icon">🟡</div>
+<div class="problem-text">
+<strong>回测周期过长</strong><br>
+<span>208 周 ≈ 4 年，跨越了 2022 年熊市、2023 年震荡、2024 年反弹等完全不同的市场环境。一个因子组合不可能在所有环境下都有效。应该分市场状态回测，或者缩短到 52-104 周。</span>
+</div>
+</div>
+
+<div class="problem-item">
+<div class="problem-icon">🟡</div>
+<div class="problem-text">
+<strong>前端展示信息单薄</strong><br>
+<span>Logs.jsx 只展示组合编号、top_n、超额卡玛三个字段。没有因子 IC、没有维度分解、没有净值曲线、没有与基准的对比图。用户无法判断"为什么这个组合不好"，只能看到"它不好"。</span>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+
+<h2 id="part3"><span class="num">3</span>进化建议与方案</h2>
+
+<h3>3.1 总体思路</h3>
+
+<p>从 <strong>"暴力网格 + 单目标"</strong> 进化为 <strong>"智能搜索 + 多目标 + 防过拟合 + 可视化"</strong>：</p>
+
+<div class="flow-box">当前:  随机 25 组 × 3 档 → 单一卡玛 → 达标/不达标
+                    ↓
+进化:  智能搜索 → 多目标 Pareto → 防过拟合审计 → 共振加权 → 可视化
+
+  ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐
+  │ 因子空间  │   │ 搜索算法  │   │ 评估体系  │   │ 前端展示  │
+  │ 24→40+   │   │ 随机→贝叶斯│   │ 单目标→多 │   │ 数字→图表 │
+  │ 无中性化  │   │           │   │ 无审计    │   │          │
+  │  →中性化  │   │           │   │  →三段审计 │   │          │
+  └──────────┘   └──────────┘   └──────────┘   └──────────┘</div>
+
+<h3>3.2 具体进化方案</h3>
+
+<!-- E1 -->
+<div class="evolution-card">
+<div class="evolution-header">
+<span class="evolution-title">E1: 因子空间扩展 — 从 24 到 40+</span>
+<span class="phase-tag phase-p1">P1 · 高优</span>
+</div>
+<div class="evolution-body">
+<p>将 v3.1 新增的 15 个因子 + EVO 交叉因子 + 共振维度分纳入候选池：</p>
+<table>
+<tr><th>新增因子</th><th>来源</th><th>类别</th></tr>
+<tr><td><code>overnight_return_5d</code></td><td>P2A</td><td>隔夜收益</td></tr>
+<tr><td><code>intraday_return_5d</code></td><td>P2A</td><td>日内收益</td></tr>
+<tr><td><code>amihud_illiq_20d</code></td><td>P2B</td><td>非流动性</td></tr>
+<tr><td><code>gk_volatility_20d</code></td><td>P2C</td><td>GK 波动率</td></tr>
+<tr><td><code>parkinson_volatility_20d</code></td><td>P2C</td><td>Parkinson 波动率</td></tr>
+<tr><td><code>turnover_volatility_20d</code></td><td>P2B</td><td>换手波动</td></tr>
+<tr><td><code>volume_skewness_20d</code></td><td>P2B</td><td>成交量偏度</td></tr>
+<tr><td><code>cyq_chip_concentration_60d</code></td><td>P2D</td><td>CYQ 筹码集中度</td></tr>
+<tr><td><code>cyq_profit_ratio_60d</code></td><td>P2D</td><td>CYQ 获利比例</td></tr>
+<tr><td><code>sector_strength</code></td><td>P2E</td><td>板块强度</td></tr>
+<tr><td><code>sentiment_composite</code></td><td>P2F</td><td>情绪复合</td></tr>
+<tr><td>EVO 交叉因子 (10 个)</td><td>EVO</td><td>交叉因子</td></tr>
+</table>
+<ul>
+<li>修改 <code>config/candidate_factors.yaml</code> 加入新因子</li>
+<li>修改 <code>agent/config.yaml</code> 的 experimental_pool 加入新因子</li>
+<li>回测引擎需要支持从 <code>factor_values_evo</code> 表加载 EVO 因子</li>
+</ul>
+</div>
+</div>
+
+<!-- E2 -->
+<div class="evolution-card">
+<div class="evolution-header">
+<span class="evolution-title">E2: 因子中性化接入 — 剥离行业/市值暴露</span>
+<span class="phase-tag phase-p1">P1 · 高优</span>
+</div>
+<div class="evolution-body">
+<p>在 <code>validate_factors()</code> 之后、<code>recommend_adaptive_portfolio()</code> 之前，插入中性化步骤：</p>
+<div class="flow-box">validate_factors()
+    ↓
+【新增】factor_lib.neutralizer.FactorNeutralizer.neutralize_cross_section()
+    - 对每个因子做截面 OLS 回归: f ~ ln(free_mv) + industry_dummies
+    - 取残差作为中性化后的因子值
+    - 消除行业/市值暴露
+    ↓
+recommend_adaptive_portfolio() (使用中性化后的因子)</div>
+<ul>
+<li>已实现：<code>factor_lib/neutralizer.py</code> 的 <code>FactorNeutralizer</code> 类</li>
+<li>修改 <code>agent/run_agent.py</code> 的 <code>run_single_full_process()</code> 插入中性化步骤</li>
+<li>在 <code>agent/config.yaml</code> 新增 <code>neutralize: enabled: true</code> 开关</li>
+</ul>
+</div>
+</div>
+
+<!-- E3 -->
+<div class="evolution-card">
+<div class="evolution-header">
+<span class="evolution-title">E3: 搜索算法升级 — 从随机网格到贝叶斯优化</span>
+<span class="phase-tag phase-p2">P2 · 中优</span>
+</div>
+<div class="evolution-body">
+<p>用 <strong>Tree-structured Parzen Estimator (TPE)</strong> 替代纯随机网格：</p>
+<ul>
+<li><strong>搜索空间</strong>：因子组合（离散）+ top_n（离散）+ multiplier（连续）</li>
+<li><strong>替代方案</strong>：遗传算法（因子组合 = 染色体，excess_calmar = 适应度，交叉/变异/精英保留）</li>
+<li><strong>混合策略</strong>：前 20 轮随机探索，之后切换到 TPE 利用</li>
+<li><strong>收益</strong>：同样的 100 次测试预算下，找到好组合的概率提升 5-10 倍</li>
+</ul>
+<p>实现方式：修改 <code>run_auto_cruise()</code> 的外循环，从遍历固定组合改为调用搜索器生成下一组候选。</p>
+</div>
+</div>
+
+<!-- E4 -->
+<div class="evolution-card">
+<div class="evolution-header">
+<span class="evolution-title">E4: 多目标评估 — 从单一卡玛到 Pareto 前沿</span>
+<span class="phase-tag phase-p2">P2 · 中优</span>
+</div>
+<div class="evolution-body">
+<p>将评估体系从单一 <code>excess_calmar</code> 升级为多指标加权评分：</p>
+<table>
+<tr><th>指标</th><th>权重</th><th>说明</th></tr>
+<tr><td>超额卡玛比率</td><td>30%</td><td>风险调整后超额收益（保留原有核心）</td></tr>
+<tr><td>IC 均值</td><td>20%</td><td>因子预测能力</td></tr>
+<tr><td>ICIR</td><td>15%</td><td>IC 的稳定性</td></tr>
+<tr><td>超额胜率</td><td>10%</td><td>周度跑赢基准的频率</td></tr>
+<tr><td>最大回撤</td><td>10%</td><td>绝对风险控制</td></tr>
+<tr><td>共振维度分</td><td>15%</td><td>四重共振总分（v3.1 新增）</td></tr>
+</table>
+<p>综合评分 = Σ(权重 × 归一化指标)，达标阈值从 0.50 调整为综合分 ≥ 60/100。</p>
+</div>
+</div>
+
+<!-- E5 -->
+<div class="evolution-card">
+<div class="evolution-header">
+<span class="evolution-title">E5: 防过拟合审计接入</span>
+<span class="phase-tag phase-p2">P2 · 中优</span>
+</div>
+<div class="evolution-body">
+<p>在达标判定后增加防过拟合审计环节，通过才可部署：</p>
+<div class="flow-box">excess_calmar >= 0.50
+    ↓
+【新增】factor_lib.anti_overfit.AntiOverfitChecker.three_stage_audit()
+    ├─ Stage 1: 经济逻辑 (方向一致 + IC显著 + 半衰期>2天)
+    ├─ Stage 2: 统计验证 (置换检验 p<0.05 + 子周期稳定性>70%)
+    └─ Stage 3: 样本外 (Purged WF-CV 正占比>60% + 衰减<60%)
+    ↓
+三段全部通过 → 正式部署
+任一段未通过 → 标记过拟合风险，降级或拒绝部署</div>
+<ul>
+<li>已实现：<code>factor_lib/anti_overfit.py</code> 的 <code>purged_walk_forward()</code>、<code>ic_half_life()</code>、<code>three_stage_audit()</code></li>
+<li>修改 <code>run_auto_cruise()</code> 的达标判定块，插入三段审计</li>
+</ul>
+</div>
+</div>
+
+<!-- E6 -->
+<div class="evolution-card">
+<div class="evolution-header">
+<span class="evolution-title">E6: 共振策略整合 — 四维评分作为组合优化维度</span>
+<span class="phase-tag phase-p3">P3 · 低优</span>
+</div>
+<div class="evolution-body">
+<p>在推荐阶段引入四重共振评分，作为组合筛选的辅助维度：</p>
+<ul>
+<li>对回测选出的 Top-N 股票，计算四维共振分（筹码×资金×板块×情绪）</li>
+<li>共振分 > 0.7 的组合加权分额外 +10%</li>
+<li>共振分 < 0.3 的组合降权或剔除</li>
+<li>在日志中展示每个组合的四维雷达图</li>
+</ul>
+<p>已实现：<code>factor_lib/resonance.py</code> 的 <code>ResonanceEngine</code></p>
+</div>
+</div>
+
+<!-- E7 -->
+<div class="evolution-card">
+<div class="evolution-header">
+<span class="evolution-title">E7: 前端展示升级 — 从数字到图表</span>
+<span class="phase-tag phase-p3">P3 · 低优</span>
+</div>
+<div class="evolution-body">
+<p>Logs.jsx 升级展示内容：</p>
+<table>
+<tr><th>新增内容</th><th>图表类型</th></tr>
+<tr><td>净值曲线对比</td><td>组合 vs 基准折线图</td></tr>
+<tr><td>回撤曲线</td><td>水下面积图</td></tr>
+<tr><td>因子 IC 热力图</td><td>因子 × 时间 IC 矩阵</td></tr>
+<tr><td>四维雷达图</td><td>每个组合的共振雷达</td></tr>
+<tr><td>搜索收敛图</td><td>迭代次数 vs 最优卡玛</td></tr>
+<tr><td>因子贡献度</td><td>条形图 (哪些因子贡献了收益)</td></tr>
+</table>
+</div>
+</div>
+
+<!-- E8 -->
+<div class="evolution-card">
+<div class="evolution-header">
+<span class="evolution-title">E8: 回测周期分状态优化</span>
+<span class="phase-tag phase-p3">P3 · 低优</span>
+</div>
+<div class="evolution-body">
+<p>将 208 周统一回测改为分市场状态回测：</p>
+<ul>
+<li>按市场状态（Range/Up/Down）分段回测，每段 52 周</li>
+<li>计算每个因子组合在不同状态下的表现</li>
+<li>最终评分 = 各状态加权平均（Range 权重最高，因为策略定位震荡市）</li>
+<li>展示分状态净值曲线，让用户看到组合在不同环境下的表现</li>
+</ul>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+
+<h2 id="part4"><span class="num">4</span>分阶段实施路线</h2>
+
+<div class="card">
+<div class="card-title">阶段一（P1 · 立即可做，1-2 小时）</div>
+<table>
+<tr><th>编号</th><th>任务</th><th>修改文件</th><th>难度</th></tr>
+<tr><td><span class="badge badge-green">E1</span></td><td>候选因子池扩展：加入 15 个新因子</td><td>config/candidate_factors.yaml</td><td>低</td></tr>
+<tr><td><span class="badge badge-green">E2</span></td><td>因子中性化接入</td><td>agent/run_agent.py, agent/config.yaml</td><td>中</td></tr>
+</table>
+<p style="margin-top: 12px;"><strong>预期效果</strong>：因子空间从 24 扩展到 40+，消除行业/市值暴露，搜索到正超额卡玛的概率显著提升。</p>
+</div>
+
+<div class="card">
+<div class="card-title">阶段二（P2 · 短期，2-4 小时）</div>
+<table>
+<tr><th>编号</th><th>任务</th><th>修改文件</th><th>难度</th></tr>
+<tr><td><span class="badge badge-purple">E3</span></td><td>搜索算法升级（贝叶斯/遗传）</td><td>agent/searcher.py, agent/run_agent.py</td><td>高</td></tr>
+<tr><td><span class="badge badge-purple">E4</span></td><td>多目标评估体系</td><td>agent/recommender.py, agent/backtester.py</td><td>中</td></tr>
+<tr><td><span class="badge badge-purple">E5</span></td><td>防过拟合审计接入</td><td>agent/run_agent.py</td><td>中</td></tr>
+</table>
+<p style="margin-top: 12px;"><strong>预期效果</strong>：搜索效率提升 5-10 倍，多目标评估避免单一指标误导，防过拟合审计防止部署噪声组合。</p>
+</div>
+
+<div class="card">
+<div class="card-title">阶段三（P3 · 中期，4-8 小时）</div>
+<table>
+<tr><th>编号</th><th>任务</th><th>修改文件</th><th>难度</th></tr>
+<tr><td><span class="badge badge-cyan">E6</span></td><td>共振策略整合</td><td>agent/recommender.py</td><td>中</td></tr>
+<tr><td><span class="badge badge-cyan">E7</span></td><td>前端展示升级</td><td>web/frontend/src/Logs.jsx</td><td>中</td></tr>
+<tr><td><span class="badge badge-cyan">E8</span></td><td>分状态回测优化</td><td>agent/backtester.py</td><td>高</td></tr>
+</table>
+<p style="margin-top: 12px;"><strong>预期效果</strong>：共振策略与巡航系统打通，前端从数字表格升级为可视化仪表盘，分状态回测更精准。</p>
+</div>
+
+<h3>4.1 优先级矩阵</h3>
+
+<table>
+<tr><th>优先级</th><th>任务</th><th>投入</th><th>收益</th></tr>
+<tr><td><span class="badge badge-red">P0</span></td><td>E1 因子空间扩展</td><td>30 分钟</td><td>⭐⭐⭐⭐⭐</td></tr>
+<tr><td><span class="badge badge-red">P0</span></td><td>E2 因子中性化</td><td>1 小时</td><td>⭐⭐⭐⭐⭐</td></tr>
+<tr><td><span class="badge badge-amber">P1</span></td><td>E5 防过拟合审计</td><td>1 小时</td><td>⭐⭐⭐⭐</td></tr>
+<tr><td><span class="badge badge-amber">P1</span></td><td>E4 多目标评估</td><td>2 小时</td><td>⭐⭐⭐⭐</td></tr>
+<tr><td><span class="badge badge-cyan">P2</span></td><td>E3 搜索算法升级</td><td>3 小时</td><td>⭐⭐⭐</td></tr>
+<tr><td><span class="badge badge-cyan">P2</span></td><td>E7 前端展示升级</td><td>2 小时</td><td>⭐⭐⭐</td></tr>
+<tr><td><span class="badge badge-purple">P3</span></td><td>E6 共振策略整合</td><td>2 小时</td><td>⭐⭐</td></tr>
+<tr><td><span class="badge badge-purple">P3</span></td><td>E8 分状态回测</td><td>3 小时</td><td>⭐⭐</td></tr>
+</table>
+
+<h3>4.2 总结</h3>
+
+<div class="card" style="border-color: var(--accent);">
+<p><strong>核心问题</strong>：当前系统"在一个小池塘里用随机撒网的方式找鱼"——因子池太小（24个传统量价因子），搜索方式太原始（固定种子随机组合），评估标准太单一（只看卡玛），且完全不使用已建好的高级能力（中性化、共振、防过拟合）。</p>
+<p><strong>核心对策</strong>：</p>
+<ol style="color: var(--text2); padding-left: 20px;">
+<li><strong>扩大池塘</strong>（E1）：把 v3.1 的 15 个新因子 + EVO 交叉因子加入候选池</li>
+<li><strong>换智能渔网</strong>（E3）：从随机网格升级为贝叶斯优化/遗传算法</li>
+<li><strong>多维度评估</strong>（E4）：从单一卡玛升级为 IC+ICIR+胜率+共振多目标</li>
+<li><strong>接入已建能力</strong>（E2+E5+E6）：中性化、防过拟合审计、共振评分</li>
+<li><strong>可视化</strong>（E7）：从数字表格升级为图表仪表盘</li>
+</ol>
+<p style="margin-top: 16px; color: var(--text3); font-size: 13px;">建议先执行 P0（E1+E2），这两个改动最小但收益最大——把已有能力接入巡航系统，不需要写新算法。执行后重跑一轮巡航，大概率能看到正超额卡玛。</p>
+</div>
+
+</div>
+</body>
+</html>

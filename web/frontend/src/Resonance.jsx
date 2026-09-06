@@ -366,7 +366,7 @@ function ScanTab({ data, loading, error, onRefresh }) {
                   <div className="col-span-3 hidden md:block">
                     <div className="grid grid-cols-2 gap-1">
                       {DIM_KEYS.map(key => {
-                        const score = stock[`${key}_score`] ?? 0
+                        const score = stock.dimension_scores?.[key] ?? 0
                         const dim = DIM_COLORS[key]
                         return (
                           <div key={key} className="flex items-center gap-1">
@@ -419,10 +419,10 @@ function ScanTab({ data, loading, error, onRefresh }) {
                           <div className="text-xs font-semibold text-gray-300 mb-3">四维雷达图</div>
                           <RadarChart
                             scores={{
-                              chip: stock.chip_score ?? 0,
-                              capital: stock.capital_score ?? 0,
-                              sector: stock.sector_score ?? 0,
-                              sentiment: stock.sentiment_score ?? 0,
+                              chip: stock.dimension_scores?.chip ?? 0,
+                              capital: stock.dimension_scores?.capital ?? 0,
+                              sector: stock.dimension_scores?.sector ?? 0,
+                              sentiment: stock.dimension_scores?.sentiment ?? 0,
                             }}
                             size={220}
                           />
@@ -457,7 +457,7 @@ function ScanTab({ data, loading, error, onRefresh }) {
                                     className="font-mono font-bold text-sm"
                                     style={{ color: dim.color }}
                                   >
-                                    {((dimData.score ?? stock[`${key}_score`] ?? 0) * 100).toFixed(1)} 分
+                                    {((dimData.score ?? stock.dimension_scores?.[key] ?? 0) * 100).toFixed(1)} 分
                                   </span>
                                 </div>
                                 {factors.length > 0 ? (

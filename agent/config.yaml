@@ -30,6 +30,14 @@ factors:
   - quality_score
   - low_turnover_flag
   - timeliness_decay
+  # v3.1 新增实验因子
+  - overnight_return_5d
+  - intraday_return_5d
+  - amihud_illiq_20d
+  - gk_volatility_20d
+  - parkinson_volatility_20d
+  - turnover_volatility_20d
+  - volume_skewness_20d
 risk_control:
   dark_mode_beta_limit: 1.2
   extreme_market_threshold: -0.045
