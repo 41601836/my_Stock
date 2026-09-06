@@ -1,20 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom'
-import { LayoutDashboard, TrendingUp, BarChart3, Terminal, Activity, Wifi, ShieldAlert, Download, ScanSearch, CheckCircle2, Loader2, XCircle, X, Crosshair, RefreshCw, Zap, Globe, Menu, ChevronDown, ChevronUp, Target, GitCompare, Brain, Shield } from 'lucide-react'
-import Dashboard from './Dashboard'
-import Performance from './Performance'
-import Factors from './Factors'
-import Logs from './Logs'
-import JackMode from './JackMode'
-import Scanner from './Scanner'
-import ScanHistory from './ScanHistory'
-import WinRateHunter from './WinRateHunter'
+import { LayoutDashboard, Globe, Crosshair, Wifi, ShieldAlert, Download, ScanSearch, CheckCircle2, Loader2, XCircle, X, RefreshCw, Zap, Menu, ChevronDown, ChevronUp, GitCompare, Brain, Shield, Activity } from 'lucide-react'
 import StrategySelector from './StrategySelector'
-import Diagnosis from './Diagnosis'
-import Diagnose from './Diagnose'
-import Overview from './Overview'
-import PortraitAnalysis from './PortraitAnalysis'
-import PositionPick from './PositionPick'
+// 经典层单一路由表：侧边栏分组 + 路由注册 + 页面标题 均由此驱动
+import { NAV_GROUPS, ROUTES, resolveTitle } from './routes.config'
 // EVO 进化层（平行路由：用户点击 ⚡EVO 开关才解锁 EVO 菜单项和 /evo/* 路由）
 import EvoLayout from './evo/EvoLayout'
 
@@ -52,7 +41,8 @@ function App() {
   const navigate = useNavigate()
   const location = useLocation()
 
-  const currentPath = location.pathname === '/' ? 'dashboard' : location.pathname.substring(1)
+  // 顶栏页面标题：由路由表派生（未匹配路径回退默认）
+  const pageTitle = resolveTitle(location.pathname)
 
   const [marketStatus, setMarketStatus] = useState(null)
   const [apiOnline, setApiOnline] = useState(false)
@@ -61,6 +51,17 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   // 手机端操作菜单折叠状态
   const [actionsOpen, setActionsOpen] = useState(false)
+  // 侧边栏分组折叠状态（持久化，默认全展开）
+  const [collapsedGroups, setCollapsedGroups] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('nav_groups_collapsed') || '{}') } catch (_) { return {} }
+  })
+  const toggleGroup = useCallback((gid) => {
+    setCollapsedGroups(prev => {
+      const next = { ...prev, [gid]: !prev[gid] }
+      try { localStorage.setItem('nav_groups_collapsed', JSON.stringify(next)) } catch (_) { /* noop */ }
+      return next
+    })
+  }, [])
   const [visitorStats, setVisitorStats] = useState(null)
   // EVO 进化层开关：默认关闭（完全回到经典模式，UI 100% 保持原样），用户主动点击顶部按钮后开启
   const [evoMode, setEvoMode] = useState(() => {
@@ -70,7 +71,7 @@ function App() {
     try { localStorage.setItem('evo_mode', evoMode ? '1' : '0') } catch (_) { /* noop */ }
     // 关闭 EVO 模式且当前正好停留在 /evo/* 路径 → 自动跳回仪表盘
     if (!evoMode && location.pathname.startsWith('/evo')) {
-      navigate('/dashboard', { replace: true })
+      navigate('/', { replace: true })
     }
   }, [evoMode, location.pathname, navigate])
 
@@ -266,22 +267,6 @@ function App() {
   // 导航并关闭手机端抽屉
   const handleNav = (path) => { navigate(path); setSidebarOpen(false) }
 
-  const navItems = [
-    { id: '/overview',      label: '市场宏观全览',   Icon: Globe },
-    { id: '/',             label: '核心策略仪表盘', Icon: LayoutDashboard },
-    { id: '/performance',  label: '周度绩效时序',   Icon: TrendingUp },
-    { id: '/factors',      label: '因子自适应权重', Icon: BarChart3 },
-    { id: '/portrait',       label: 'T+1 画像分析',   Icon: Target },
-    { id: '/position-pick',  label: '🎯 画像建仓决策', Icon: Crosshair },
-    { id: '/jack',         label: '游资策略模拟',   Icon: Zap },
-    { id: '/scanner',      label: '建仓机会扫描',   Icon: Crosshair },
-    { id: '/scan-history', label: '扫描历史追踪',   Icon: Activity },
-    { id: '/diagnose',     label: '诊股看盘',       Icon: ScanSearch },
-    { id: '/diagnosis',    label: '建仓逻辑诊断',   Icon: Activity },
-    { id: '/logs',         label: 'Agent 进化日志', Icon: Terminal },
-    { id: '/hunter',       label: '胜率猎手优化器', Icon: Crosshair },
-  ]
-
   // EVO 专属菜单项（evoMode=true 时在经典菜单后追加，菜单分隔开）
   const evoNavItems = [
     { id: '/evo/dashboard', label: '⚡ EVO 仪表盘',   Icon: Zap,        evo: true },
@@ -299,15 +284,8 @@ function App() {
     { id: '/diagnose', label: '诊股',   Icon: ScanSearch },
   ]
 
-  const pageTitle = {
-    overview: '市场宏观全览', dashboard: '策略实时仪表盘',
-    performance: '多轨回测绩效曲线', factors: '因子自适应权重监控',
-    portrait: 'T+1 上涨画像分析',
-    'position-pick': '🎯 T+1 画像建仓决策',
-    jack: '游资策略模拟', scanner: '建仓机会实时扫描',
-    diagnose: '诊股看盘', diagnosis: '建仓策略归因诊断',
-    logs: 'Agent 进化巡航监控', hunter: '胜率猎手进化引擎',
-  }
+  // 运行时依赖注入（经 routes.config 的 props 工厂传给页面）
+  const routeCtx = { marketStatus, upsertToast, removeToast, pollTask }
 
   // 侧边栏内容（桌面 & 手机共用）
   const SidebarContent = () => (
@@ -323,14 +301,33 @@ function App() {
           </div>
         </div>
         <nav className="p-3 space-y-0.5">
-          {navItems.map(({ id, label, Icon }) => {
-            const isActive = location.pathname === id
+          {NAV_GROUPS.map(group => {
+            const items = ROUTES.filter(r => r.group === group.id)
+            const collapsed = !!collapsedGroups[group.id]
+            const groupActive = items.some(it => location.pathname === it.path || location.pathname.startsWith(it.path + '/'))
             return (
-              <button key={id} onClick={() => handleNav(id)}
-                className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm transition-all ${isActive ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20' : 'text-gray-400 hover:bg-[#1F2937] hover:text-gray-100'}`}>
-                <Icon className="h-4 w-4 shrink-0" />
-                <span>{label}</span>
-              </button>
+              <div key={group.id}>
+                {/* 分组标题（可折叠，记住状态） */}
+                <button onClick={() => toggleGroup(group.id)}
+                  className={`w-full flex items-center gap-2 px-3 pt-3 pb-1 text-[10px] font-mono uppercase tracking-wider transition-colors ${groupActive ? 'text-purple-300' : 'text-gray-500'} hover:text-gray-300`}>
+                  <span>{group.title}</span>
+                  <span className="flex-1 h-px bg-[#1F2937]" />
+                  {collapsed ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />}
+                </button>
+                {!collapsed && items.map(({ path, label, Icon }) => {
+                  // 当前路由精确匹配或前缀匹配点亮菜单项（如 /portrait-pick 不会误点亮 /portrait）
+                  const isActive = path === '/'
+                    ? location.pathname === '/'
+                    : location.pathname === path || location.pathname.startsWith(path + '/')
+                  return (
+                    <button key={path} onClick={() => handleNav(path)}
+                      className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm transition-all ${isActive ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20' : 'text-gray-400 hover:bg-[#1F2937] hover:text-gray-100'}`}>
+                      <Icon className="h-4 w-4 shrink-0" />
+                      <span>{label}</span>
+                    </button>
+                  )
+                })}
+              </div>
             )
           })}
           {/* EVO 进化层菜单分区：只有 evoMode=true 才显示 */}
@@ -412,7 +409,7 @@ function App() {
               <Menu className="h-5 w-5" />
             </button>
             <h2 className="text-sm md:text-lg font-semibold text-gray-100 truncate">
-              {pageTitle[currentPath] || '策略控制台'}
+              {pageTitle}
             </h2>
           </div>
 
@@ -513,21 +510,27 @@ function App() {
             </div>
           ) : (
             <Routes>
-              <Route path="/overview" element={<Overview />} />
-              <Route path="/" element={<Dashboard marketStatus={marketStatus} />} />
-              <Route path="/performance" element={<Performance />} />
-              <Route path="/factors" element={<Factors />} />
-              <Route path="/portrait" element={<PortraitAnalysis />} />
-              <Route path="/position-pick" element={<PositionPick />} />
-              <Route path="/jack" element={<JackMode />} />
-              <Route path="/scanner" element={<Scanner />} />
-              <Route path="/scan-history" element={<ScanHistory />} />
-              <Route path="/diagnose" element={<Diagnose />} />
-              <Route path="/diagnosis" element={<Diagnosis />} />
-              <Route path="/logs" element={<Logs />} />
-              <Route path="/hunter" element={<WinRateHunter upsertToast={upsertToast} removeToast={removeToast} pollTask={pollTask} />} />
+              {ROUTES.map(r => {
+                // 旧路径永久重定向（如 /position-pick → /portrait-pick）
+                if (r.redirect) {
+                  return <Route key={r.path} path={r.path} element={<Navigate to={r.redirect} replace />} />
+                }
+                // Tab 化合并页：父路由渲染 Tab 布局，children 为各 Tab 内容
+                if (r.children) {
+                  return (
+                    <Route key={r.path} path={r.path} element={<r.Component />}>
+                      {r.children.map(c => c.index
+                        ? <Route key="index" index element={c.element} />
+                        : <Route key={c.path} path={c.path} element={c.element} />
+                      )}
+                    </Route>
+                  )
+                }
+                return <Route key={r.path} path={r.path}
+                  element={<r.Component {...(r.props ? r.props(routeCtx) : {})} />} />
+              })}
               {/* EVO 进化层：仅在 evoMode 打开时允许进入，否则强制跳回仪表盘（安全闸 1）*/}
-              <Route path="/evo/*" element={evoMode ? <EvoLayout /> : <Navigate to="/dashboard" replace />} />
+              <Route path="/evo/*" element={evoMode ? <EvoLayout /> : <Navigate to="/" replace />} />
             </Routes>
           )}
         </div>

@@ -123,6 +123,7 @@ function gradeBadgeClass(g) {
 export default function EvoCompare() {
   const [classic, setClassic] = useState(null)
   const [evo, setEvo] = useState(null)
+  const [scan, setScan] = useState(null)
 
   useEffect(() => {
     // 左栏：经典层（直接 fetch，保持与现有页面 100% 一致的调用）
@@ -136,6 +137,8 @@ export default function EvoCompare() {
       .catch(e => setClassic({ error: String(e) }))
     // 右栏：进化层（统一走 EvoApi）
     EvoApi.comparePortfolio(10).then(d => setEvo(d.error ? null : d))
+    // 底部：建仓扫描 A/B（经典扫描池 × EVO 增强列重排）
+    EvoApi.compareScan().then(d => setScan(d.error ? null : d))
   }, [])
 
   const classicCodes = useMemo(
@@ -157,6 +160,15 @@ export default function EvoCompare() {
   const overlapPct = Math.round(overlap.ratio * 100)
   // 严谨性：经典侧缺失时重合度无从计算，显示「—」而非 0%，也不触发熔断告警
   const overlapWarn = classicOk && overlap.ratio < 0.20
+  // 代码→名称映射（chips 显示名称，避免"裸代码像不存在的股票"）
+  const nameMap = useMemo(() => {
+    const m = {}
+    for (const s of [...(classic?.stocks || []), ...((evo?.evo?.stocks) || (evo?.stocks) || [])]) {
+      const c = s.ts_code || s.stock_code || s.code
+      if (c && s.name) m[c] = s.name
+    }
+    return m
+  }, [classic, evo])
 
   return (
     <div className="flex flex-col gap-4 h-full">
@@ -217,21 +229,76 @@ export default function EvoCompare() {
           stocks={evo?.evo?.stocks || evo?.stocks || []}
           date={evo?.date}
           flags={evo?.evo?.engine_flags || evo?.engine_flags}
-          fallbackNote={evo?.evo?.note || "EVO 引擎：阶段 1+ 起开始填充交叉因子与真实排序"}
+          fallbackNote="EVO 组合暂不可用（见后端日志 EvoPort）；管线 21:30 运行后自动恢复"
         />
       </div>
 
       {/* 差异分析 */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <DiffPanel title="共同推荐" color="emerald" icon={CheckCircle} stocks={overlap.common} />
-        <DiffPanel title="EVO 新增（经典没有）" color="sky" icon={PlusCircle} stocks={overlap.onlyEvo} />
-        <DiffPanel title="EVO 剔除（经典有但 EVO 无）" color="rose" icon={MinusCircle} stocks={overlap.onlyClassic} />
+        <DiffPanel title="共同推荐" color="emerald" icon={CheckCircle} stocks={overlap.common} nameMap={nameMap} />
+        <DiffPanel title="EVO 新增（经典没有）" color="sky" icon={PlusCircle} stocks={overlap.onlyEvo} nameMap={nameMap} />
+        <DiffPanel title="EVO 剔除（经典有但 EVO 无）" color="rose" icon={MinusCircle} stocks={overlap.onlyClassic} nameMap={nameMap} />
       </div>
+
+      {/* 建仓扫描 A/B（经典扫描池 × EVO 增强列重排） */}
+      {scan && !(scan.error) ? (
+        <div className="rounded-xl bg-[#111827] border border-[#1F2937] p-4 flex flex-col gap-2">
+          <div className="flex items-center justify-between gap-2 text-sm font-semibold text-slate-100">
+            <span className="flex items-center gap-2"><TrendingUp className="h-4 w-4 text-sky-300" />建仓扫描 A/B（同一扫描池 · EVO 增强列重排）</span>
+            <span className="text-[10px] font-mono text-slate-500">
+              因子日 {scan.evo?.factor_date ? `${String(scan.evo.factor_date).slice(0,4)}-${String(scan.evo.factor_date).slice(4,6)}-${String(scan.evo.factor_date).slice(6,8)}` : '—'} · EVO 侧 {scan.evo?.count ?? 0} 只
+            </span>
+          </div>
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            {[{ key: 'cl', title: '经典排序', rows: (scan.classic?.stocks || []).slice(0, 10) },
+              { key: 'evo', title: 'EVO 重排（按 cross_mean）', rows: (scan.evo?.stocks || []).slice(0, 10) },
+            ].map(({ key, title, rows }) => (
+              <div key={key} className="rounded-lg border border-slate-800 overflow-hidden">
+                <div className="px-3 py-1.5 bg-slate-900/50 text-[10px] text-slate-400 uppercase tracking-wider">{title}</div>
+                <table className="w-full text-[11px]">
+                  <tbody>
+                    {rows.map((s, i) => {
+                      const e = s.evo || {}
+                      return (
+                        <tr key={s.ts_code || i} className="border-t border-slate-800/60">
+                          <td className="px-2 py-1 text-slate-500 font-mono w-6">{i + 1}</td>
+                          <td className="px-2 py-1">
+                            <a href={emStockUrl(s.ts_code)} target="_blank" rel="noopener noreferrer"
+                              className="font-mono text-slate-200 hover:text-sky-300">{s.ts_code}</a>
+                            <span className="ml-1.5 text-slate-400">{s.name || ''}</span>
+                          </td>
+                          {key === 'cl' ? (
+                            <td className="px-2 py-1 text-right font-mono text-purple-300">{typeof s.score === 'number' ? s.score.toFixed(1) : '—'}</td>
+                          ) : (
+                            <>
+                              <td className="px-2 py-1 text-right font-mono text-amber-300" title="交叉因子均值 0~1">
+                                {typeof e.cross_mean === 'number' ? e.cross_mean.toFixed(3) : '—'}
+                              </td>
+                              <td className="px-2 py-1 text-right font-mono text-rose-300" title="Graham 0~7">
+                                {e.graham_score != null ? `${e.graham_score}/7` : '—'}
+                              </td>
+                              <td className="px-2 py-1 text-right font-mono text-emerald-300" title="ML rank_score">
+                                {typeof e.ml_rank_score === 'number' ? e.ml_rank_score.toFixed(3) : '—'}
+                              </td>
+                            </>
+                          )}
+                        </tr>
+                      )
+                    })}
+                    {!rows.length && <tr><td className="px-2 py-3 text-slate-600 text-center" colSpan={5}>暂无数据</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            ))}
+          </div>
+          <div className="text-[10px] text-slate-600 font-mono">{scan.evo?.note}</div>
+        </div>
+      ) : null}
     </div>
   )
 }
 
-function DiffPanel({ title, color, icon: Icon, stocks }) {
+function DiffPanel({ title, color, icon: Icon, stocks, nameMap = {} }) {
   const palette = {
     emerald: { bd: 'border-emerald-500/30', bg: 'bg-emerald-500/10', text: 'text-emerald-300', count: 'text-emerald-200' },
     sky:     { bd: 'border-sky-500/30',     bg: 'bg-sky-500/10',     text: 'text-sky-300',     count: 'text-sky-200' },
@@ -253,8 +320,8 @@ function DiffPanel({ title, color, icon: Icon, stocks }) {
         {stocks.length ? stocks.map(c => (
           <a key={c} href={emStockUrl(c)} target="_blank" rel="noopener noreferrer"
              className="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-900/50 text-slate-300 border border-slate-700/40 hover:text-sky-300 hover:border-sky-500/40 transition-colors"
-             title="在东方财富查看行情">
-            {c}
+             title={`${nameMap[c] || ''} ${c} · 在东方财富查看行情`}>
+            {nameMap[c] ? `${nameMap[c]}·${c}` : c}
           </a>
         )) : <span className="text-[11px] text-slate-500">—</span>}
       </div>

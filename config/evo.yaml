@@ -48,15 +48,8 @@ crowding_monitor:
 
 # ===================== P1 高价值模块 =====================
 
-lambdarank:
-  enabled: false                   # 默认关闭（等 _evo 表数据积累 ≥3 个月后开启）
-  label_horizon: 10                # 预测未来 N 日收益率排序
-  features_subset: null            # null = 用全部进化层因子；可列白名单
-  retrain_cron: "0 2 * * 0"        # 每周日 02:00 重训练
-  learning_rate: 0.05
-  num_leaves: 31
-  num_trees: 600
-  top_n_inference: 50              # 推理时返回 Top N
+# 注：LambdaRank 唯一配置块见下方 P3 监控模块（2026-09-03 修复重复键：
+# 旧文件存在两个 lambdarank: 块，PyYAML 后者静默覆盖前者，安全闸语义被悄悄改写）。
 
 surprise_factors:
   enabled: true
@@ -97,9 +90,12 @@ graham_filter:
     dividend_record_min_years: 3      # ⑥ 连续 N 年分红（降级：过去 5 年内至少有分红记录）
     earnings_growth_10y_min_pct: 33.0 # ⑦ 10 年内盈利增长 ≥ 33%（降级：5 年增长 ≥ 20%）
   scoring:
-    bonus_min_checks: 4               # 通过 ≥ 4 项 → 画像分 + bonus
+    # P1-4 收紧（2026-09-03 复盘）：4→6。依据 20260902 全市场 5530 只 Graham 检查项分布：
+    #   ≥4 项=3688 只(66.7%) 无选择性；≥5 项=1124(20.3%)；≥6 项=507(9.2%)；7 项=0。
+    #   回滚：本行改回 4 即恢复原口径（bonus 为加分项非硬过滤，零侵入）。
+    bonus_min_checks: 6               # 通过 ≥ 6 项 → 画像分 + bonus（原 4，P1-4）
     bonus_points: 5.0
-    penalty_max_checks: 1             # 通过 ≤ 1 项 → 画像分 - penalty
+    penalty_max_checks: 1             # 通过 ≤ 1 项 → 画像分 - penalty（不动）
     penalty_points: 10.0
 
 # ===================== P3 监控模块 =====================

@@ -193,4 +193,6 @@ def validate_factors(config_path="agent/config.yaml"):
 if __name__ == "__main__":
     report, _ = validate_factors()
     for f, details in report.items():
+        if f.startswith("_"):
+            continue
         print(f"因子 [{f:<24}] ➡️ 状态: {details['status']:<8} | 基准IC: {details['baseline_ic']:.4f} | 近期IC: {details['recent_ic']:.4f} | 衰减: {details['decay_ratio']*100:.1f}%")

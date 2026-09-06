@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react'
-import { Landmark, ArrowUpRight, ArrowDownRight, Compass, ShieldCheck, Cpu } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Landmark, ArrowUpRight, ArrowDownRight, Compass, ShieldCheck, Cpu, BarChart3, Flame, Calendar, ChevronRight } from 'lucide-react'
+import { StreakBadge, RankCircle, AppearBadge } from './scanner/shared'
 
 // 生成东方财富行情链接（对格式异常的代码做防护）
 const getEastmoneyUrl = (stockCode) => {
@@ -18,8 +20,11 @@ const portraitGradeConfig = {
 }
 
 function Dashboard({ marketStatus }) {
+  const navigate = useNavigate()
   const [portfolio, setPortfolio] = useState([])
   const [loading, setLoading] = useState(true)
+  // 扫描历史预览（供三个预览卡片使用）
+  const [scanPreview, setScanPreview] = useState({ summary: [], streak: [], daily: {}, meta: {} })
 
   useEffect(() => {
     fetch('/api/portfolio')
@@ -32,6 +37,19 @@ function Dashboard({ marketStatus }) {
         console.error(err)
         setLoading(false)
       })
+  }, [])
+
+  // 仪表盘用：取近 30 天「今日策略推荐」累计统计（胜率猎手优化器；只消费 summary/streak/daily 顶部几条）
+  useEffect(() => {
+    fetch('/api/reco-history?days=30&min_appear=1')
+      .then(r => r.json())
+      .then(d => setScanPreview({
+        summary: (d.summary || []).slice(0, 5),
+        streak:  (d.streak  || []).slice(0, 5),
+        daily:   d.daily   || {},
+        meta:    d.meta    || {},
+      }))
+      .catch(err => console.error('scan-history preview fetch failed:', err))
   }, [])
 
   const getRegimeDetails = (regime) => {
@@ -144,6 +162,134 @@ function Dashboard({ marketStatus }) {
             <ShieldCheck className="h-3.5 w-3.5 mr-1 text-emerald-400" />
             <span>暴跌周内减仓/清仓风控挂载中</span>
           </div>
+        </div>
+      </div>
+
+      {/* 📋 今日策略推荐统计预览（胜率猎手优化器；3 卡 grid，整张卡可跳完整子页） */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-bold text-gray-200">今日策略推荐统计</span>
+          <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30">
+            策略：胜率猎手优化器
+          </span>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+        {/* 频率排行 Top 5 */}
+        <button
+          onClick={() => navigate('/reco-history')}
+          title="查看完整的今日策略推荐上榜统计（近 30 天累计，含5日超额胜率）"
+          className="group text-left p-6 bg-[#151D30] rounded-2xl border border-[#222F4C] space-y-3 hover:border-sky-500/40 hover:bg-[#1A253D]/60 hover:-translate-y-0.5 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-sky-500/30"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-gray-400 font-mono flex items-center gap-1.5">
+              <BarChart3 className="h-3.5 w-3.5 text-sky-400 group-hover:scale-110 transition-transform" />上榜频率 Top 5
+            </span>
+            <span className="text-xs text-sky-400/80 group-hover:text-sky-300 flex items-center gap-0.5 transition-colors">
+              查看全部 <ChevronRight className="h-3 w-3 group-hover:translate-x-0.5 transition-transform" />
+            </span>
+          </div>
+          {scanPreview.summary.length === 0 ? (
+            <div className="text-xs text-gray-500 py-6 text-center">暂无历史数据</div>
+          ) : (
+            <div className="space-y-1.5">
+              {scanPreview.summary.map((s, i) => (
+                <div key={s.ts_code} className="flex items-center gap-2 text-xs">
+                  <RankCircle rank={i + 1} />
+                  <div className="flex-1 min-w-0 truncate">
+                    <span className="text-gray-200 font-semibold font-sans">
+                      {s.name}
+                    </span>
+                  </div>
+                  <AppearBadge count={s.appear_count} />
+                </div>
+              ))}
+            </div>
+          )}
+        </button>
+
+        {/* 连续上榜 Top 5 */}
+        <button
+          onClick={() => navigate('/reco-history/streak')}
+          title="查看完整的连续推荐追踪（识别策略持续看多的标的）"
+          className="group text-left p-6 bg-[#151D30] rounded-2xl border border-[#222F4C] space-y-3 hover:border-rose-500/40 hover:bg-[#1A253D]/60 hover:-translate-y-0.5 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-rose-500/30"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-gray-400 font-mono flex items-center gap-1.5">
+              <Flame className="h-3.5 w-3.5 text-rose-400 group-hover:scale-110 transition-transform" />连续上榜 Top 5
+            </span>
+            <span className="text-xs text-rose-400/80 group-hover:text-rose-300 flex items-center gap-0.5 transition-colors">
+              查看全部 <ChevronRight className="h-3 w-3 group-hover:translate-x-0.5 transition-transform" />
+            </span>
+          </div>
+          {scanPreview.streak.length === 0 ? (
+            <div className="text-xs text-gray-500 py-6 text-center">暂无连续上榜记录</div>
+          ) : (
+            <div className="space-y-1.5">
+              {scanPreview.streak.map((s, i) => (
+                <div key={s.ts_code} className="flex items-center gap-2 text-xs">
+                  <div className="w-6 text-right text-gray-600 font-mono">{i + 1}</div>
+                  <div className="flex-1 min-w-0 truncate">
+                    <span className="text-gray-200 font-semibold font-sans">{s.name}</span>
+                  </div>
+                  <StreakBadge days={s.max_streak_days || s.streak_days} />
+                </div>
+              ))}
+            </div>
+          )}
+        </button>
+
+        {/* 每日快照概览 */}
+        <button
+          onClick={() => navigate('/reco-history/daily')}
+          title="查看完整的每日策略推荐快照（含当日 Regime 和推荐名单）"
+          className="group text-left p-6 bg-[#151D30] rounded-2xl border border-[#222F4C] space-y-3 hover:border-emerald-500/40 hover:bg-[#1A253D]/60 hover:-translate-y-0.5 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-gray-400 font-mono flex items-center gap-1.5">
+              <Calendar className="h-3.5 w-3.5 text-emerald-400 group-hover:scale-110 transition-transform" />最近快照概览
+            </span>
+            <span className="text-xs text-emerald-400/80 group-hover:text-emerald-300 flex items-center gap-0.5 transition-colors">
+              查看全部 <ChevronRight className="h-3 w-3 group-hover:translate-x-0.5 transition-transform" />
+            </span>
+          </div>
+          {(() => {
+            const dates = Object.keys(scanPreview.daily).sort((a, b) => b.localeCompare(a)).slice(0, 4)
+            if (dates.length === 0) return <div className="text-xs text-gray-500 py-6 text-center">暂无快照数据</div>
+            return (
+              <div className="space-y-1.5">
+                {dates.map(d => {
+                  const rows = scanPreview.daily[d] || []
+                  const regime = rows[0]?.regime || '—'
+                  const fmt = `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6)}`
+                  return (
+                    <div key={d}
+                      className="w-full flex items-center gap-2 text-xs py-1 px-2 rounded-lg bg-[#0E1524]/40 group-hover:bg-[#0E1524]/80 transition-colors">
+                      <span className="text-gray-300 font-mono flex-1 text-left">{fmt}</span>
+                      <span className="text-gray-500 font-mono">{rows.length} 只</span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono border ${
+                        regime === 'BULL'  ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30' :
+                        regime === 'BEAR'  ? 'text-rose-400 bg-rose-500/10 border-rose-500/30' :
+                        regime === 'DARK'  ? 'text-orange-400 bg-orange-500/10 border-orange-500/30' :
+                        regime === 'RANGE' ? 'text-sky-400 bg-sky-500/10 border-sky-500/30' :
+                                             'text-gray-400 bg-gray-500/10 border-gray-500/30'
+                      }`}>{regime}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          })()}
+          {/* 累计统计 */}
+          {scanPreview.meta.scan_days && (
+            <div className="pt-2 border-t border-[#222F4C]/50 flex justify-between text-[11px] text-gray-500">
+              <span>累计 <span className="text-gray-300 font-mono">{scanPreview.meta.scan_days}</span> 天</span>
+              <span>覆盖 <span className="text-gray-300 font-mono">{scanPreview.meta.unique_stocks}</span> 只</span>
+              <span>记录 <span className="text-gray-300 font-mono">{scanPreview.meta.total_records}</span> 条</span>
+            </div>
+          )}
+        </button>
+
         </div>
       </div>
 

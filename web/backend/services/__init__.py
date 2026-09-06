@@ -49,6 +49,7 @@ from .market_overview import (
     record_visitor, get_visitor_stats,
 )
 from .portrait import get_portrait_analysis, get_portrait_position_pick
+from .reco_history import get_reco_history  # 今日策略推荐统计层（recommendation_tracker）
 
 
 __all__ = [
@@ -79,4 +80,6 @@ __all__ = [
     "record_visitor", "get_visitor_stats",
     # portrait
     "get_portrait_analysis", "get_portrait_position_pick",
+    # reco_history（今日策略推荐统计）
+    "get_reco_history",
 ]

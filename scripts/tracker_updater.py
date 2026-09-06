@@ -23,23 +23,48 @@ def update_recommendation_performance():
         
     conn = sqlite3.connect(DB_PATH)
     try:
+        # 退市判定宽限期：推荐日之后行情缺口不足该交易日数时，按停牌/缺数处理
+        DELIST_GRACE_TRADING_DAYS = 30
+
+        # 0. 假退市惩罚自愈：被 -100% 结算、但推荐日后实际已有 ≥5 条行情
+        #    （说明是停牌/数据缺口被误判，如 688237 停牌 6 个交易日后复牌），
+        #    重置为未结算状态，交由下方主循环按真实价格重算。幂等。
+        healed = conn.execute(
+            """
+            UPDATE recommendation_tracker
+            SET base_price = NULL,
+                ret_1d = NULL, ret_3d = NULL, ret_5d = NULL,
+                ret_10d = NULL, ret_20d = NULL,
+                alpha_1d = NULL, alpha_3d = NULL, alpha_5d = NULL,
+                alpha_10d = NULL, alpha_20d = NULL
+            WHERE ret_5d <= -0.999 AND COALESCE(base_price, 0) <= 0
+              AND 5 <= (
+                  SELECT COUNT(*) FROM daily_prices dp
+                  WHERE dp.ts_code = recommendation_tracker.ts_code
+                    AND dp.trade_date > recommendation_tracker.recommend_date
+              )
+            """
+        ).rowcount
+        if healed:
+            print(f"♻️ [自愈] {healed} 条假退市惩罚记录已重置，将按真实行情重新结算")
+
         # 1. 找出所有尚未结算完全 (即 alpha_20d 为空) 的记录
         df_pending = pd.read_sql(
             "SELECT recommend_date, ts_code, base_price FROM recommendation_tracker "
             "WHERE alpha_20d IS NULL", conn
         )
-        
+
         if df_pending.empty:
             print("✅ 没有需要结算的推荐记录。")
             return
-            
+
         print(f"📥 共有 {len(df_pending)} 条记录等待增量结算...")
-        
+
         # 2. 获取所有的交易日历以计算基准累计收益
         # 为防止幸存者偏差，我们将计算每日全市场的平均累计收益作为基准 (Benchmark)
         df_all_dates = pd.read_sql("SELECT DISTINCT trade_date FROM daily_prices ORDER BY trade_date", conn)
         dates_list = df_all_dates["trade_date"].tolist()
-        
+
         # 3. 逐条计算
         for _, row in df_pending.iterrows():
             rec_date = row["recommend_date"]
@@ -54,29 +79,63 @@ def update_recommendation_performance():
             )
             
             if df_prices.empty:
-                # 区分“尚未交易”与“真正退市”：
-                # 只有当最新日线数据的日期已推进到推荐日之后，但个股仍无后续日线，才判定为退市
-                if dates_list and rec_date >= dates_list[-1]:
-                    # 属于今日最新推荐，未来交易日还没发生，跳过结算，不予标记退市
+                # 区分三种情形：
+                #  A. 最新推荐，未来交易日还没发生 → 跳过，不结算
+                #  B. 推荐日之后行情缺口 < 30 个交易日 → 停牌/数据缺口，留待下次结算
+                #     （教训：688237 停牌 6 个交易日后复牌，曾被误判退市 -100%）
+                #  C. 缺口 ≥ 30 个交易日仍无行情 → 确认退市，-100% 惩罚（防幸存者偏差）
+                try:
+                    rec_idx = dates_list.index(rec_date)
+                except ValueError:
+                    rec_idx = -1
+                gap = (len(dates_list) - 1 - rec_idx) if rec_idx >= 0 else 0
+                if rec_idx < 0 or gap <= 0:
+                    # 推荐日不在交易日历/未来行情未发生
                     continue
-                
-                # 确认退市，强制以 -100% 收益惩罚结算，消灭退市造成的幸存者偏差
-                print(f"🚨 [退市拦截] 股票 {ts_code} 在推荐日 {rec_date} 后无任何价格序列，触发归零惩罚")
-                conn.execute(
-                    "UPDATE recommendation_tracker SET "
-                    "base_price=0.0, ret_1d=-1.0, ret_3d=-1.0, ret_5d=-1.0, ret_10d=-1.0, ret_20d=-1.0, "
-                    "alpha_1d=-1.0, alpha_3d=-1.0, alpha_5d=-1.0, alpha_10d=-1.0, alpha_20d=-1.0 "
-                    "WHERE recommend_date = ? AND ts_code = ?",
-                    (rec_date, ts_code)
-                )
+                if gap < DELIST_GRACE_TRADING_DAYS:
+                    # 宽限期内：不惩罚、不结算，等下次 updater 复核
+                    continue
+
+                # 确认退市：-100% 惩罚；base_price 取推荐日收盘价（绝不写 0，避免污染统计）
+                rec_close = conn.execute(
+                    "SELECT close FROM daily_prices WHERE ts_code = ? AND trade_date = ?",
+                    (ts_code, rec_date)
+                ).fetchone()
+                base_val = None
+                if rec_close and rec_close[0] is not None and float(rec_close[0]) > 0:
+                    base_val = float(rec_close[0])
+                print(f"🚨 [退市拦截] 股票 {ts_code} 推荐日 {rec_date} 后行情缺口 {gap} 个交易日，"
+                      f"确认退市，触发归零惩罚 (base_price={base_val})")
+                if base_val:
+                    conn.execute(
+                        "UPDATE recommendation_tracker SET "
+                        "base_price = ?, "
+                        "ret_1d=-1.0, ret_3d=-1.0, ret_5d=-1.0, ret_10d=-1.0, ret_20d=-1.0, "
+                        "alpha_1d=-1.0, alpha_3d=-1.0, alpha_5d=-1.0, alpha_10d=-1.0, alpha_20d=-1.0 "
+                        "WHERE recommend_date = ? AND ts_code = ?",
+                        (base_val, rec_date, ts_code)
+                    )
+                else:
+                    conn.execute(
+                        "UPDATE recommendation_tracker SET "
+                        "ret_1d=-1.0, ret_3d=-1.0, ret_5d=-1.0, ret_10d=-1.0, ret_20d=-1.0, "
+                        "alpha_1d=-1.0, alpha_3d=-1.0, alpha_5d=-1.0, alpha_10d=-1.0, alpha_20d=-1.0 "
+                        "WHERE recommend_date = ? AND ts_code = ?",
+                        (rec_date, ts_code)
+                    )
                 continue
                 
             # 4. 填充基准买入价 (base_price，即 T+1 日开盘价)
             if base_price is None or pd.isna(base_price) or base_price <= 0:
-                base_price = float(df_prices.iloc[0]["open"])
-                # 避免开盘价为 0 或 NaN
-                if pd.isna(base_price) or base_price <= 0:
-                    base_price = float(df_prices.iloc[0]["close"])
+                open_px = df_prices.iloc[0]["open"]
+                close_px = df_prices.iloc[0]["close"]
+                base_price = float(open_px) if pd.notna(open_px) and float(open_px) > 0 else None
+                if base_price is None and pd.notna(close_px) and float(close_px) > 0:
+                    base_price = float(close_px)
+                if base_price is None:
+                    # 首条行情开收盘价均无效（脏数据），跳过本条，绝不写入 0 价
+                    print(f"⚠️ [Tracker] {ts_code} @ {rec_date} 首条行情价格无效，跳过结算")
+                    continue
                 conn.execute(
                     "UPDATE recommendation_tracker SET base_price = ? "
                     "WHERE recommend_date = ? AND ts_code = ?",

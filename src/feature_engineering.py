@@ -43,13 +43,12 @@ def calculate_stock_factors(db_path=None):
             p.low, 
             p.close, 
             p.vol,
-            -- adj_factor 三级兜底：
-            -- 1) 优先 stk_factor.adj_factor（每日官方后复权因子，主数据）；
-            -- 2) 回退 daily_prices.adj_factor（种子表自带，通常全 NULL，已兼容处理）；
-            -- 3) 终极回退 1.0（stk_factor 某交易日漏采全市场，如 20260825 仅 10 行时，
-            --    用 1.0 = 不复权，保证 close_adj 不会因单个交易日而向下污染后续 20 个交易日的
-            --    rolling(20) 波动率 / 收益指标，避免 5500+ 个股全部被 dropna 误删）。
-            COALESCE(sf.adj_factor, p.adj_factor, 1.0) AS adj_factor,
+            -- 重要说明：Tushare pro.daily() 返回的 close/high/low 默认已经是
+            -- 前复权价(adj='qfq')，历史除权除息已调整完毕，价格序列天然连续。
+            -- 因此这里不再乘 adj_factor（后复权因子），避免 stk_factor 某日
+            -- 缺失导致 COALESCE 兜底 1.0，pct_change 分母/分子量级错位
+            -- 产生 return_5d = -96% 级别的毁灭性计算错误（详见 20260902 bug 复盘）。
+            1.0 AS adj_factor,
             IFNULL(b.turnover_rate, 0.0) AS turnover_rate,
             IFNULL(b.pe, 0.0)             AS pe_ttm,
             IFNULL(b.pb, 0.0)             AS pb,
@@ -59,7 +58,6 @@ def calculate_stock_factors(db_path=None):
         FROM daily_prices p
         INNER JOIN daily_basic b ON p.ts_code = b.ts_code AND p.trade_date = b.trade_date
         LEFT JOIN moneyflow m ON p.ts_code = m.ts_code AND p.trade_date = m.trade_date
-        LEFT JOIN stk_factor sf ON p.ts_code = sf.ts_code AND p.trade_date = sf.trade_date
         WHERE p.trade_date >= '20200101'
         ORDER BY p.ts_code, p.trade_date;
     """

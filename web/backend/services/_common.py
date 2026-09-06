@@ -122,12 +122,28 @@ def _get_restricted_stocks(conn):
 
 
 def _log_recommendations_to_tracker(conn, recommend_date, stocks, regime):
-    """推荐股票快照写入追踪表（INSERT OR IGNORE 防重）"""
+    """
+    推荐股票【当日最终组合】快照写入追踪表。
+
+    快照语义（2026-09-03 P0-3 修复）：
+      /api/portfolio 每次被调用（盘中多次、regime/权重切换）都会触发落库，
+      旧逻辑 INSERT OR IGNORE 把同一 recommend_date 的多次调用结果并集累积
+      （实测单日 4~135 条），污染胜率/连续上榜统计。
+      现改为：同一 recommend_date 下，未结算（alpha_20d IS NULL）的旧快照先
+      删除再写入，使该日内容 = 最后一次调用的最终组合（≤top_n）。
+      已结算的历史记录（alpha_20d 非空）永不删除。
+    """
     if not recommend_date or not stocks:
         return
     try:
         date_clean = str(recommend_date).replace("-", "")
         cursor = conn.cursor()
+        # 快照替换：清掉当日未结算的旧调用残留（历史已结算行受保护）
+        cursor.execute(
+            "DELETE FROM recommendation_tracker "
+            "WHERE recommend_date = ? AND alpha_20d IS NULL",
+            (date_clean,)
+        )
         for s in stocks:
             ts_code = s.get("ts_code") or s.get("stock_code")
             if not ts_code:
@@ -146,8 +162,9 @@ def _log_recommendations_to_tracker(conn, recommend_date, stocks, regime):
             factor_score = s.get("score") or s.get("factor_score") or 0.0
             if factor_score > 1.0:
                 factor_score /= 100.0
+            # base_price 一律由 tracker_updater 用 T+1 开盘价回填，此处不写价格
             cursor.execute(
-                "INSERT OR IGNORE INTO recommendation_tracker "
+                "INSERT INTO recommendation_tracker "
                 "(recommend_date, ts_code, base_price, regime, factor_score, winner_rate, chips_concentration, net_mf_amount) "
                 "VALUES (?, ?, NULL, ?, ?, ?, ?, ?)",
                 (date_clean, ts_code, str(regime).upper(), float(factor_score), float(winner_rate), float(chips_concentration), float(net_mf_amount))

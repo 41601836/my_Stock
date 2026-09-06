@@ -4,7 +4,7 @@ services.performance —— 绩效曲线、Agent 日志、归因反馈
 * get_performance_data()           主策略净值曲线 & 年化/回撤/卡玛 & 胜率
 * get_jack_performance_data()      Jack 游资模拟净值曲线（CSV：backtest_results_jack.csv）
 * get_agent_logs()                 Agent 进化轨迹 + 最近日志 + 最佳战果面板
-* get_tracker_attribution_data()   真实追踪器：T+N 衰减曲线 + Regime 诊断 + 推荐明细
+* get_tracker_attribution_data()   真实追踪器：T+N 衰减曲线 + Regime 诊断 + 推荐明细 + factor_score 单调性监控（P2-10）
 * determine_adaptive_hold_period() 自适应换仓期反馈控制（数据驱动，默认 20 天兜底）
 """
 
@@ -19,7 +19,7 @@ import pandas as pd
 
 from ._common import (
     PROJECT_ROOT, DB_PATH, RESULTS_PATH, LOGS_PATH,
-    get_db_connection,
+    get_db_connection, _load_raw_thresholds,
 )
 
 _logger = logging.getLogger(__name__)
@@ -122,7 +122,7 @@ def get_agent_logs():
 
     if is_cruise_latest:
         try:
-            latest_report = max(report_files, key=os.path.getctime)
+            latest_report = max(report_files, key=os.path.getmtime)
             with open(latest_report, "r", encoding="utf-8") as f:
                 data = json.load(f)
             trajectory = data.get("search_trajectory", [])[-10:]
@@ -180,13 +180,104 @@ def get_agent_logs():
     if not recent_logs:
         recent_logs = ["ℹ️ Agent 进化巡航模式启动正常。", "ℹ️ 配置文件 backup 状态安全。"]
 
+    # P0 活性判定：以 agent/cruise_heartbeat 的 mtime 为准 (巡航进程 30s 刷新，容忍 5 分钟)。
+    # 旧逻辑"存在报告文件即 RUNNING"会永久谎报运行状态 —— 巡航进程死亡后 UI 无感知。
+    heartbeat_path = os.path.join(PROJECT_ROOT, "agent", "cruise_heartbeat")
+    status = "IDLE (巡航未运行)"
+    heartbeat_time_str = None
+    if os.path.exists(heartbeat_path):
+        hb_mtime = os.path.getmtime(heartbeat_path)
+        heartbeat_time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(hb_mtime))
+        if time.time() - hb_mtime < 300:
+            status = "RUNNING (增量巡航中)"
+        else:
+            status = f"INTERRUPTED (巡航已中断，上次存活 {heartbeat_time_str})"
+
+    # 展示时间：运行中显示实时心跳时间；否则显示最新报告时间
+    display_time = heartbeat_time_str if status.startswith("RUNNING") and heartbeat_time_str else latest_time_str
+
     return {
-        "last_updated": latest_time_str,
-        "status":       "RUNNING (增量巡航中)" if report_files else "IDLE (部署成功)",
+        "last_updated": display_time,
+        "status":       status,
         "trajectory":   trajectory,
         "recent_logs":  recent_logs,
         "best_results": best_results,
     }
+
+
+def _calc_score_monotonicity(df):
+    """P2-10：tracker factor_score 分组单调性监控（打分失效早发现）。
+    口径：当日内 factor_score pct rank 五分位（消除跨日分数漂移）× 前瞻 alpha 均值
+          → Spearman(组序, alpha)。主判定窗口 alpha_5d；Q5 = 当日 factor_score 最高组。
+    阈值来自 config/thresholds.yaml tracker_monotonicity（热加载，enabled:false 可关闭）。
+    只读监控输出，不影响任何打分/推荐链路。"""
+    cfg = (_load_raw_thresholds() or {}).get("tracker_monotonicity", {}) or {}
+    if not cfg.get("enabled", True):
+        return {"enabled": False}
+    recent_days = int(cfg.get("recent_days", 10))
+    min_bucket_n = int(cfg.get("min_bucket_n", 30))
+    ok_rho = float(cfg.get("ok_rho", 0.5))
+
+    horizons = [1, 3, 5, 10, 20]
+    rule = (f"Spearman(五分位组序, alpha)：≥{ok_rho} ok｜0~{ok_rho} weak｜<0 reversed(打分反向告警)｜"
+            f"单组样本<{min_bucket_n} insufficient；Q5=当日 factor_score 最高组")
+
+    def _one(sub, label):
+        sub = sub[sub["factor_score"].notna()].copy()
+        n_total, n_days = len(sub), sub["recommend_date"].nunique()
+        base = {"window": label, "n": n_total, "days": int(n_days)}
+        if n_total == 0 or n_days == 0:
+            return {**base, "status": "insufficient", "buckets": [], "spearman": {}}
+        # 当日内排名分位（消除跨日分数量纲漂移）
+        sub["rank_pct"] = sub.groupby("recommend_date")["factor_score"].rank(pct=True)
+        sub["bucket"] = pd.cut(sub["rank_pct"], bins=[0, .2, .4, .6, .8, 1.0],
+                               labels=["Q1", "Q2", "Q3", "Q4", "Q5"], include_lowest=True)
+        avail = [w for w in horizons if f"alpha_{w}d" in sub.columns and sub[f"alpha_{w}d"].notna().any()]
+        g = sub.groupby("bucket", observed=True).agg(
+            **{f"alpha_{w}d": (f"alpha_{w}d", "mean") for w in avail},
+            n=("factor_score", "size"),
+        )
+        buckets = [{"bucket": str(idx), "n": int(row["n"]),
+                    **{f"alpha_{w}d": round(float(row[f"alpha_{w}d"]), 5) if pd.notna(row[f"alpha_{w}d"]) else None
+                       for w in avail}} for idx, row in g.iterrows()]
+        spearman = {}
+        for w in avail:
+            vals = g[f"alpha_{w}d"]
+            if vals.notna().sum() >= 3:
+                rho = pd.Series(range(1, len(vals) + 1), index=vals.index).corr(vals, method="spearman")
+                spearman[f"alpha_{w}d"] = round(float(rho), 3) if pd.notna(rho) else None
+        # 主判定：alpha_5d（tracker 核心前瞻口径）
+        rho5 = spearman.get("alpha_5d")
+        if rho5 is None or (g["n"] < min_bucket_n).any():
+            status = "insufficient"
+        elif rho5 < 0:
+            status = "reversed"
+        elif rho5 < ok_rho:
+            status = "weak"
+        else:
+            status = "ok"
+        return {**base, "buckets": buckets, "spearman": spearman, "status": status}
+
+    days_all = sorted(df["recommend_date"].unique())
+    sub_recent = df[df["recommend_date"].isin(days_all[-recent_days:])]
+    blk_all = _one(df, "all")
+    blk_recent = _one(sub_recent, f"recent_{recent_days}d")
+
+    statuses = [b["status"] for b in (blk_all, blk_recent) if b.get("status")]
+    if "reversed" in statuses:
+        overall = "reversed"
+        _logger.warning("🚨 [P2-10] factor_score 打分单调性告警：组序与 alpha_5d 反向 "
+                        f"(all rho={blk_all.get('spearman', {}).get('alpha_5d')}, "
+                        f"recent rho={blk_recent.get('spearman', {}).get('alpha_5d')})——打分可能失效，建议复核因子组合")
+    elif "weak" in statuses:
+        overall = "weak"
+    elif all(s == "insufficient" for s in statuses):
+        overall = "insufficient"
+    else:
+        overall = "ok"
+
+    return {"enabled": True, "status": overall, "rule": rule,
+            "all": blk_all, "recent": blk_recent}
 
 
 def get_tracker_attribution_data():
@@ -276,7 +367,8 @@ def get_tracker_attribution_data():
             "decay": mock_decay,
             "regime": mock_regime,
             "details": detail_list,
-            "is_mocked": len(df) < 5
+            "is_mocked": len(df) < 5,
+            "score_monotonicity": _calc_score_monotonicity(df),
         }
 
     except Exception as e:

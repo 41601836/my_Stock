@@ -1,5 +1,5 @@
 {
-  "built_at": "2026-09-01 22:07:44",
+  "built_at": "2026-09-03 19:40:44",
   "fwd_period": 5,
   "label_bins": 10,
   "train_end": "20241231",
@@ -23,11 +23,11 @@
     "mkt_breadth_20d",
     "mkt_vol_ratio"
   ],
-  "n_samples": 3212846,
+  "n_samples": 3218386,
   "n_features": 17,
-  "n_dates": 1575,
+  "n_dates": 1576,
   "n_codes": 5572,
-  "n_dropped_no_label": 5597234,
+  "n_dropped_no_label": 5598851,
   "dates": [
     "20200302",
     "20200303",
@@ -1603,7 +1603,8 @@
     "20260820",
     "20260821",
     "20260824",
-    "20260825"
+    "20260825",
+    "20260826"
   ],
   "codes": [
     "000001.SZ",
@@ -7182,7 +7183,7 @@
   "split": {
     "train": 1833581,
     "valid": 190883,
-    "test": 1188382
+    "test": 1193922
   },
   "nan_rate_by_feature": {
     "inter_quality_momentum": 0.0252,
@@ -7195,9 +7196,9 @@
     "inter_lowvol_profit": 0.0252,
     "inter_turnover_reversal": 0.0252,
     "inter_chip_break_right": 0.0252,
-    "surprise_price_vote": 0.0408,
+    "surprise_price_vote": 0.0407,
     "surprise_earnings_gap": 0.0252,
-    "surprise_roe_qoq": 0.0582,
+    "surprise_roe_qoq": 0.0579,
     "text_sentiment_score": 1.0,
     "graham_score": 0.0252,
     "mkt_breadth_20d": 0.0041,

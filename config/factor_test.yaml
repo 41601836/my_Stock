@@ -1,0 +1,43 @@
+version: "1.0"
+note: "因子测试 & 收益验证模块独立配置，与 thresholds.yaml / evo.yaml 平行，互不干扰"
+
+data:
+  db_path: null
+  start_date: "20200101"
+  end_date: null
+  exclude_st: true
+  exclude_new_stock_days: 365
+  min_cross_section_size: 30
+  clip_return: [-0.5, 0.8]
+
+ic:
+  type: "both"
+  return_periods: [1, 3, 5, 10, 20]
+  default_period: 5
+
+stratified:
+  n_groups: 5
+  rebalance_freq: "weekly"
+  cost_bps: 15.0
+
+backtest:
+  top_n: 10
+  rebalance_freq: "weekly"
+  cost_bps: 15.0
+  benchmark: "equal_weight"
+  handle_limit: true
+
+anti_overfit:
+  train_ratio: 0.6
+  walk_forward_train: 252
+  walk_forward_test: 63
+  n_permutations: 200
+  yearly_consistency_ratio: 0.70
+  ic_positive_ratio: 0.60
+  icir_min: 0.30
+  significance_level: 0.05
+
+report:
+  output_dir: "factor_test_reports"
+  language: "zh"
+  charts: "echarts"

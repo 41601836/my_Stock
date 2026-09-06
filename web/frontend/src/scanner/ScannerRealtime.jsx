@@ -2,87 +2,30 @@ import React, { useState, useEffect, useCallback } from 'react'
 import {
   Crosshair, TrendingUp, BarChart3, Zap, RefreshCw,
   ArrowUpRight, ArrowDownRight, Minus, Info,
-  Building2, Target, Layers, DollarSign, Activity, Sparkles, Search, X
+  Building2, Target, Layers, DollarSign, Activity, Sparkles, X
 } from 'lucide-react'
+import { ScoreBarWide as ScoreBar, PctChg, BuildGrade, safeValue } from './shared'
 
-// 建仓信号强度色阶
-function ScoreBar({ value, max = 100 }) {
-  const safeVal = (value === null || value === undefined || isNaN(value) || !isFinite(value)) ? 0 : Number(value)
-  const pct = Math.min(safeVal / max, 1)
-  const color =
-    pct >= 0.75 ? 'bg-emerald-500' :
-    pct >= 0.55 ? 'bg-sky-500' :
-    pct >= 0.40 ? 'bg-amber-500' : 'bg-rose-500'
-  const textColor =
-    pct >= 0.75 ? 'text-emerald-400' :
-    pct >= 0.55 ? 'text-sky-400' :
-    pct >= 0.40 ? 'text-amber-400' : 'text-rose-400'
-  return (
-    <div className="flex items-center gap-2">
-      <div className="w-24 h-2 bg-[#0E1524] rounded-full overflow-hidden border border-[#222F4C]">
-        <div className={`h-full rounded-full transition-all duration-700 ${color}`} style={{ width: `${pct * 100}%` }} />
-      </div>
-      <span className={`text-xs font-bold font-mono ${textColor}`}>{safeValue(value, 1)}</span>
-    </div>
-  )
-}
-
-// 涨跌幅显示
-function PctChg({ value }) {
-  const num = Number(value)
-  const invalid = value === null || value === undefined || isNaN(num) || !isFinite(num)
-  if (invalid) return <span className="text-gray-500 font-mono flex items-center gap-0.5"><Minus className="h-3 w-3" />—</span>
-  if (num > 0) return <span className="text-rose-500 font-bold font-mono flex items-center gap-0.5"><ArrowUpRight className="h-3 w-3" />+{num.toFixed(2)}%</span>
-  if (num < 0) return <span className="text-emerald-500 font-bold font-mono flex items-center gap-0.5"><ArrowDownRight className="h-3 w-3" />{num.toFixed(2)}%</span>
-  return <span className="text-gray-400 font-mono flex items-center gap-0.5"><Minus className="h-3 w-3" />0.00%</span>
-}
-
-// 建仓等级标签
-function BuildGrade({ score }) {
-  const s = Number(score)
-  const invalid = score === null || score === undefined || isNaN(s) || !isFinite(s)
-  if (invalid) return <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-gray-500/15 text-gray-400 border border-gray-500/30">—</span>
-  if (s >= 75) return <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">强烈建仓</span>
-  if (s >= 60) return <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-sky-500/15 text-sky-400 border border-sky-500/30">积极关注</span>
-  if (s >= 45) return <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30">谨慎建仓</span>
-  return <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-gray-500/15 text-gray-400 border border-gray-500/30">观望</span>
-}
-
-// 安全数值显示：null/undefined/NaN 显示为破折号，防止 .toFixed() 抛错导致整列空白
-function safeValue(value, decimals = 1, fallback = '—') {
-  if (value === null || value === undefined || typeof value !== 'number' || isNaN(value) || !isFinite(value)) {
-    return fallback
-  }
-  return value.toFixed(decimals)
-}
-
-function Scanner() {
+export default function ScannerRealtime() {
   const [stocks, setStocks]     = useState([])
   const [meta, setMeta]         = useState({})
   const [loading, setLoading]   = useState(true)
   const [selected, setSelected] = useState(null)
   const [lastUpdate, setLastUpdate] = useState(null)
-  const [sectorQuery, setSectorQuery] = useState('')
-  const [activeSector, setActiveSector] = useState('')
 
-  const fetchOpportunities = useCallback((sector = activeSector) => {
+  const fetchOpportunities = useCallback(() => {
     setLoading(true)
-    const url = sector 
-      ? `/api/market/sector-opportunities?sector=${encodeURIComponent(sector)}`
-      : '/api/scan-opportunities'
-    fetch(url)
+    fetch('/api/scan-opportunities')
       .then(res => res.json())
       .then(data => {
         setStocks(data.stocks || [])
         setMeta(data.meta || {})
         setLastUpdate(new Date())
         setLoading(false)
-        setActiveSector(sector)
       })
       .catch(() => setLoading(false))
-  }, [activeSector])
+  }, [])
 
-  // 首次加载 + 每5分钟自动刷新
   useEffect(() => {
     fetchOpportunities()
     const timer = setInterval(fetchOpportunities, 5 * 60 * 1000)
@@ -98,36 +41,23 @@ function Scanner() {
   const selectedStock = selected !== null ? stocks.find(s => s.rank === selected) : null
 
   return (
-    <div className="space-y-6" id="scanner-view">
+    <div className="space-y-6">
 
-      {/* ── 标题栏 */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-purple-500/15 border border-purple-500/30">
-            <Crosshair className="h-6 w-6 text-purple-400 animate-pulse" />
-          </div>
-          <div>
-            <h2 className="text-xl font-bold text-gray-100">建仓机会实时扫描</h2>
-            <p className="text-xs text-gray-500 font-mono">
-              5维融合 · 因子+筹码+主力资金+涨幅过滤
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          {lastUpdate && (
-            <span className="text-xs text-gray-500 font-mono">
-              {lastUpdate.toLocaleTimeString('zh-CN', { hour12: false })} 刷新
-            </span>
-          )}
-          <button
-            onClick={() => fetchOpportunities(activeSector)}
-            disabled={loading}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold bg-purple-600/20 text-purple-400 border border-purple-600/30 hover:bg-purple-600/30 hover:text-purple-200 active:scale-95 transition-all disabled:opacity-50"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
-            <span>{loading ? '刷新列表...' : '刷新列表'}</span>
-          </button>
-        </div>
+      {/* ── 顶部刷新按钮 ── */}
+      <div className="flex items-center justify-end gap-3">
+        {lastUpdate && (
+          <span className="text-xs text-gray-500 font-mono">
+            {lastUpdate.toLocaleTimeString('zh-CN', { hour12: false })} 刷新
+          </span>
+        )}
+        <button
+          onClick={fetchOpportunities}
+          disabled={loading}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold bg-purple-600/20 text-purple-400 border border-purple-600/30 hover:bg-purple-600/30 hover:text-purple-200 active:scale-95 transition-all disabled:opacity-50"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+          <span>{loading ? '刷新列表...' : '刷新列表'}</span>
+        </button>
       </div>
 
       {/* ── 数据血统状态跟踪 (Data Lineage Tracker) */}
@@ -173,49 +103,6 @@ function Scanner() {
           </p>
         </div>
       )}
-
-      {/* ── 专属板块搜索栏 */}
-      <div className="flex flex-col md:flex-row items-center gap-3 p-4 rounded-xl bg-[#151d32] border border-[#1e2a44]">
-        <div className="flex-1 w-full relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-          <input
-            type="text"
-            placeholder="输入行业或板块 (如: 半导体, 创业板, 汽车)..."
-            value={sectorQuery}
-            onChange={(e) => setSectorQuery(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && fetchOpportunities(sectorQuery)}
-            className="w-full bg-[#0B1220] border border-[#2A3F5F] text-white rounded-lg py-3 pl-12 pr-10 focus:outline-none focus:border-purple-500 transition-colors"
-          />
-          {sectorQuery && (
-            <button 
-              onClick={() => { setSectorQuery(''); fetchOpportunities(''); }}
-              className="absolute right-4 top-1/2 -translate-y-1/2 p-1 hover:bg-[#2A3F5F] rounded-md text-gray-400 transition-colors"
-              title="清除"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-        <div className="flex gap-3 w-full md:w-auto">
-          <button
-            onClick={() => fetchOpportunities(sectorQuery)}
-            disabled={!sectorQuery || loading}
-            className="flex-1 md:flex-none px-6 py-3 rounded-lg text-sm font-bold bg-purple-600 hover:bg-purple-500 disabled:bg-purple-600/50 text-white transition-all flex items-center justify-center gap-2"
-          >
-            <Target className="w-4 h-4" />
-            专属板块扫描
-          </button>
-          {activeSector && (
-            <button
-              onClick={() => { setSectorQuery(''); fetchOpportunities(''); }}
-              className="px-6 py-3 rounded-lg text-sm font-bold bg-[#2A3F5F] hover:bg-[#3B527A] text-white transition-all flex items-center justify-center gap-2"
-            >
-              <Layers className="w-4 h-4" />
-              全市场
-            </button>
-          )}
-        </div>
-      </div>
 
       {/* ── 统计卡片 */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -373,114 +260,115 @@ function Scanner() {
                   </div>
                 </div>
 
-              {/* 5维指标详情 */}
-              <div className="space-y-3">
-                {selectedStock.stats && (
-                  <div className="flex flex-wrap gap-2 mb-2 pb-3 border-b border-[#1A253D]">
-                    <div className="px-2 py-1 rounded bg-[#0E1524] border border-[#222F4C] text-xs font-mono">
-                      <span className="text-gray-500 mr-1">总推荐:</span>
-                      <span className="text-blue-400 font-bold">{selectedStock.stats.total_recommends} 次</span>
+                {/* 5维指标详情 */}
+                <div className="space-y-3">
+                  {selectedStock.stats && (
+                    <div className="flex flex-wrap gap-2 mb-2 pb-3 border-b border-[#1A253D]">
+                      <div className="px-2 py-1 rounded bg-[#0E1524] border border-[#222F4C] text-xs font-mono">
+                        <span className="text-gray-500 mr-1">总推荐:</span>
+                        <span className="text-blue-400 font-bold">{selectedStock.stats.total_recommends} 次</span>
+                      </div>
+                      <div className="px-2 py-1 rounded bg-[#0E1524] border border-[#222F4C] text-xs font-mono">
+                        <span className="text-gray-500 mr-1">近期连续:</span>
+                        <span className="text-orange-400 font-bold">{selectedStock.stats.consecutive_days} 天</span>
+                      </div>
+                      <div className="px-2 py-1 rounded bg-[#0E1524] border border-[#222F4C] text-xs font-mono">
+                        <span className="text-gray-500 mr-1">高光时刻:</span>
+                        <span className={selectedStock.stats.ever_top_3 ? "text-fuchsia-400 font-bold" : "text-gray-400"}>
+                          {selectedStock.stats.ever_top_3 ? "曾入前三" : "未进前三"}
+                        </span>
+                      </div>
                     </div>
-                    <div className="px-2 py-1 rounded bg-[#0E1524] border border-[#222F4C] text-xs font-mono">
-                      <span className="text-gray-500 mr-1">近期连续:</span>
-                      <span className="text-orange-400 font-bold">{selectedStock.stats.consecutive_days} 天</span>
-                    </div>
-                    <div className="px-2 py-1 rounded bg-[#0E1524] border border-[#222F4C] text-xs font-mono">
-                      <span className="text-gray-500 mr-1">高光时刻:</span>
-                      <span className={selectedStock.stats.ever_top_3 ? "text-fuchsia-400 font-bold" : "text-gray-400"}>
-                        {selectedStock.stats.ever_top_3 ? "曾入前三" : "未进前三"}
-                      </span>
-                    </div>
+                  )}
+                  <div className="text-xs text-gray-500 font-mono uppercase tracking-widest">信号详情</div>
+
+                  {[
+                    { label: '因子信号强度', value: selectedStock.factor_score,    icon: <BarChart3 className="h-4 w-4 text-purple-400" />, suffix: '%',    tip: '综合因子横截面得分（策略模型打分）' },
+                    { label: '筹码胜率',     value: selectedStock.winner_rate,     icon: <Target className="h-4 w-4 text-sky-400" />,    suffix: '%',    tip: '持股盈利比例，越高说明机构锁仓越深' },
+                    { label: '筹码集中度',   value: selectedStock.chips_peak_pct,  icon: <Layers className="h-4 w-4 text-sky-300" />,    suffix: '%',    tip: '主峰筹码占比，越高说明成本越集中' },
+                    { label: '主力净流入',   value: selectedStock.big_net_inflow,  icon: <DollarSign className="h-4 w-4 text-rose-500" />, suffix: ' 亿', tip: '大单+超大单净买入金额（正值=主力吸筹）', isInflow: true },
+                    { label: '20日换手率',   value: selectedStock.turnover_rate,   icon: <Activity className="h-4 w-4 text-amber-400" />,  suffix: '%',   tip: '20日均换手率，0.5%~15% 为流动性合理区间' },
+                    { label: 'MVO 建议权重', value: selectedStock.mvo_weight,      icon: <Sparkles className="h-4 w-4 text-emerald-400" />, suffix: '%',  tip: '经 Ledoit-Wolf 风险协方差矩阵和行业暴露控制计算的最优持仓权重，防范集中暴跌' },
+                  ].map((item, i) => {
+                    const num = Number(item.value)
+                    const invalid = item.value === null || item.value === undefined || isNaN(num) || !isFinite(num)
+                    const decimals = item.suffix === ' 亿' ? 2 : 1
+                    let display, colorClass = 'text-gray-100'
+                    if (invalid) {
+                      display = '—'
+                    } else if (item.isInflow) {
+                      const absVal = Math.abs(num)
+                      display = `${num >= 0 ? '+' : '-'}${absVal.toFixed(decimals)}${item.suffix}`
+                      colorClass = num >= 0 ? 'text-rose-500' : 'text-emerald-500'
+                    } else {
+                      display = `${num.toFixed(decimals)}${item.suffix}`
+                    }
+                    return (
+                      <div key={i} className="flex items-center justify-between py-2 border-b border-[#1A253D]">
+                        <div className="flex items-center gap-2">
+                          {item.icon}
+                          <span className="text-xs text-gray-400" title={item.tip}>{item.label}</span>
+                        </div>
+                        <span className={`text-sm font-bold font-mono ${colorClass}`}>{display}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {/* 建仓理由 */}
+                <div className="p-3 bg-[#0B1220]/80 rounded-xl border border-[#1A253D]">
+                  <div className="text-xs text-gray-500 font-mono mb-1.5 flex items-center gap-1">
+                    <Info className="h-3 w-3" /> 建仓依据
                   </div>
-                )}
-                <div className="text-xs text-gray-500 font-mono uppercase tracking-widest">信号详情</div>
+                  <div className="text-xs text-gray-300 leading-relaxed font-sans">
+                    {selectedStock.reason || '暂无详细建仓依据，请结合因子评分综合判断。'}
+                  </div>
+                </div>
 
-                {[
-                  { label: '因子信号强度', value: selectedStock.factor_score,    icon: <BarChart3 className="h-4 w-4 text-purple-400" />, suffix: '%',    tip: '综合因子横截面得分（策略模型打分）' },
-                  { label: '筹码胜率',     value: selectedStock.winner_rate,     icon: <Target className="h-4 w-4 text-sky-400" />,    suffix: '%',    tip: '持股盈利比例，越高说明机构锁仓越深' },
-                  { label: '筹码集中度',   value: selectedStock.chips_peak_pct,  icon: <Layers className="h-4 w-4 text-sky-300" />,    suffix: '%',    tip: '主峰筹码占比，越高说明成本越集中' },
-                  { label: '主力净流入',   value: selectedStock.big_net_inflow,  icon: <DollarSign className="h-4 w-4 text-rose-500" />, suffix: ' 亿', tip: '大单+超大单净买入金额（正值=主力吸筹）', isInflow: true },
-                  { label: '20日换手率',   value: selectedStock.turnover_rate,   icon: <Activity className="h-4 w-4 text-amber-400" />,  suffix: '%',   tip: '20日均换手率，0.5%~15% 为流动性合理区间' },
-                  { label: 'MVO 建议权重', value: selectedStock.mvo_weight,      icon: <Sparkles className="h-4 w-4 text-emerald-400" />, suffix: '%',  tip: '经 Ledoit-Wolf 风险协方差矩阵和行业暴露控制计算的最优持仓权重，防范集中暴跌' },
-                ].map((item, i) => {
-                  const num = Number(item.value)
-                  const invalid = item.value === null || item.value === undefined || isNaN(num) || !isFinite(num)
-                  const decimals = item.suffix === ' 亿' ? 2 : 1
-                  let display, colorClass = 'text-gray-100'
-                  if (invalid) {
-                    display = '—'
-                  } else if (item.isInflow) {
-                    const absVal = Math.abs(num)
-                    display = `${num >= 0 ? '+' : '-'}${absVal.toFixed(decimals)}${item.suffix}`
-                    colorClass = num >= 0 ? 'text-rose-500' : 'text-emerald-500'
-                  } else {
-                    display = `${num.toFixed(decimals)}${item.suffix}`
+                {/* 操作提示 */}
+                <div className="p-3 rounded-xl bg-amber-900/10 border border-amber-700/20">
+                  <p className="text-xs text-amber-400/80 font-sans leading-relaxed">
+                    ⚠️ 以上分析基于量化因子模型，仅供参考，不构成投资建议。建仓时请结合市场状态（当前 DARK 避险期建议降低仓位比例）。
+                  </p>
+                </div>
+              </div>
+
+              {/* 综合评分雷达（文字版） */}
+              <div className="p-4 bg-[#151D30]/60 rounded-2xl border border-[#222F4C]">
+                <div className="text-xs text-gray-500 font-mono mb-3">综合评分构成</div>
+                {(() => {
+                  const _safe = (v, fallback = 0) => {
+                    const n = Number(v)
+                    return (v === null || v === undefined || isNaN(n) || !isFinite(n)) ? fallback : n
                   }
-                  return (
-                    <div key={i} className="flex items-center justify-between py-2 border-b border-[#1A253D]">
-                      <div className="flex items-center gap-2">
-                        {item.icon}
-                        <span className="text-xs text-gray-400" title={item.tip}>{item.label}</span>
+                  const factor_s = _safe(selectedStock.factor_score)
+                  const winner_s = _safe(selectedStock.winner_rate)
+                  const build_s  = _safe(selectedStock.build_score)
+                  const pct_s    = _safe(selectedStock.pct_chg)
+                  return [
+                    { label: '因子信号', score: factor_s, weight: 35 },
+                    { label: '筹码胜率', score: Math.min(winner_s, 100), weight: 25 },
+                    { label: '主力吸筹', score: build_s > 0 ? 60 : 30, weight: 25 },
+                    { label: '低追高险', score: Math.max(0, 100 - Math.abs(pct_s) * 10), weight: 15 },
+                  ].map((item, i) => {
+                    const widthPct = Math.max(0, Math.min(100, Number(item.score) || 0))
+                    return (
+                      <div key={i} className="flex items-center gap-3 mb-2">
+                        <div className="text-xs text-gray-500 w-16 shrink-0">{item.label}</div>
+                        <div className="flex-1 h-1.5 bg-[#0E1524] rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-purple-500/70 rounded-full transition-all duration-700"
+                            style={{ width: `${widthPct}%` }}
+                          />
+                        </div>
+                        <span className="text-xs text-gray-400 font-mono w-10 text-right">{item.weight}%权</span>
                       </div>
-                      <span className={`text-sm font-bold font-mono ${colorClass}`}>{display}</span>
-                    </div>
-                  )
-                })}
-              </div>
-
-              {/* 建仓理由 */}
-              <div className="p-3 bg-[#0B1220]/80 rounded-xl border border-[#1A253D]">
-                <div className="text-xs text-gray-500 font-mono mb-1.5 flex items-center gap-1">
-                  <Info className="h-3 w-3" /> 建仓依据
-                </div>
-                <div className="text-xs text-gray-300 leading-relaxed font-sans">
-                  {selectedStock.reason || '暂无详细建仓依据，请结合因子评分综合判断。'}
-                </div>
-              </div>
-
-              {/* 操作提示 */}
-              <div className="p-3 rounded-xl bg-amber-900/10 border border-amber-700/20">
-                <p className="text-xs text-amber-400/80 font-sans leading-relaxed">
-                  ⚠️ 以上分析基于量化因子模型，仅供参考，不构成投资建议。建仓时请结合市场状态（当前 DARK 避险期建议降低仓位比例）。
-                </p>
+                    )
+                  })
+                })()}
               </div>
             </div>
-
-            {/* 综合评分雷达（文字版） */}
-            <div className="p-4 bg-[#151D30]/60 rounded-2xl border border-[#222F4C]">
-              <div className="text-xs text-gray-500 font-mono mb-3">综合评分构成</div>
-              {(() => {
-                const _safe = (v, fallback = 0) => {
-                  const n = Number(v)
-                  return (v === null || v === undefined || isNaN(n) || !isFinite(n)) ? fallback : n
-                }
-                const factor_s = _safe(selectedStock.factor_score)
-                const winner_s = _safe(selectedStock.winner_rate)
-                const build_s  = _safe(selectedStock.build_score)
-                const pct_s    = _safe(selectedStock.pct_chg)
-                return [
-                  { label: '因子信号', score: factor_s, weight: 35 },
-                  { label: '筹码胜率', score: Math.min(winner_s, 100), weight: 25 },
-                  { label: '主力吸筹', score: build_s > 0 ? 60 : 30, weight: 25 },
-                  { label: '低追高险', score: Math.max(0, 100 - Math.abs(pct_s) * 10), weight: 15 },
-                ].map((item, i) => {
-                  const widthPct = Math.max(0, Math.min(100, Number(item.score) || 0))
-                  return (
-                    <div key={i} className="flex items-center gap-3 mb-2">
-                      <div className="text-xs text-gray-500 w-16 shrink-0">{item.label}</div>
-                      <div className="flex-1 h-1.5 bg-[#0E1524] rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-purple-500/70 rounded-full transition-all duration-700"
-                          style={{ width: `${widthPct}%` }}
-                        />
-                      </div>
-                      <span className="text-xs text-gray-400 font-mono w-10 text-right">{item.weight}%权</span>
-                    </div>
-                  )
-                })
-              })()}
-            </div>
-          </div>
+            {/* 综合评分雷达（文字版）结束 */}
           </>
         )}
       </div>
@@ -504,5 +392,3 @@ function Scanner() {
     </div>
   )
 }
-
-export default Scanner

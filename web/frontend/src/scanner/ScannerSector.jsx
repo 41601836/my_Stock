@@ -1,0 +1,395 @@
+import React, { useState, useEffect, useCallback, useRef } from 'react'
+import {
+  Crosshair, TrendingUp, BarChart3, Zap, RefreshCw,
+  ArrowUpRight, ArrowDownRight, Minus, Info,
+  Building2, Target, Layers, DollarSign, Activity, Sparkles, Search, X
+} from 'lucide-react'
+import { ScoreBarWide as ScoreBar, PctChg, BuildGrade, safeValue } from './shared'
+
+// ── 热门板块快捷按钮 ──────────────────────────────────────────
+const POPULAR_SECTORS = [
+  '半导体', '新能源', '汽车', '人工智能', '医药',
+  '消费电子', '军工', '光伏', '储能', '机器人',
+]
+
+export default function ScannerSector() {
+  const [stocks, setStocks]     = useState([])
+  const [meta, setMeta]         = useState({})
+  const [loading, setLoading]   = useState(true)
+  const [selected, setSelected] = useState(null)
+  const [lastUpdate, setLastUpdate] = useState(null)
+  // query = 输入框展示态；debouncedQuery = 唯一触发 API 的值（防抖后）
+  const [query, setQuery]                 = useState('半导体')
+  const [debouncedQuery, setDebouncedQuery] = useState('半导体')
+  const [activeSector, setActiveSector]   = useState('半导体')
+  const timerRef  = useRef(null)
+  const composing = useRef(false)   // 中文 IME 合成中，抑制防抖触发
+
+  // ── 防抖 hook：输入停止 500ms 后才 setDebouncedQuery ──
+  useEffect(() => {
+    if (composing.current) return   // IME 合成中，等用户确认后再触发
+    if (timerRef.current) clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(() => {
+      setDebouncedQuery(query.trim())
+    }, 500)
+    return () => { if (timerRef.current) clearTimeout(timerRef.current) }
+  }, [query])
+
+  // ── 手动立即触发（绕过防抖）：Enter / 按钮 / 快捷按钮 / 全市场 ──
+  const triggerNow = useCallback((val) => {
+    if (timerRef.current) clearTimeout(timerRef.current)
+    setQuery(val)
+    setDebouncedQuery(val.trim())
+  }, [])
+
+  const fetchOpportunities = useCallback((sector) => {
+    setLoading(true)
+    const url = sector
+      ? `/api/market/sector-opportunities?sector=${encodeURIComponent(sector)}`
+      : '/api/scan-opportunities'
+    fetch(url)
+      .then(res => res.json())
+      .then(data => {
+        setStocks(data.stocks || [])
+        setMeta(data.meta || {})
+        setLastUpdate(new Date())
+        setLoading(false)
+        setActiveSector(sector)
+      })
+      .catch(() => setLoading(false))
+  }, [])
+
+  // ── 唯一 API 触发源：debouncedQuery 变化 → 自动拉取 ──
+  useEffect(() => {
+    fetchOpportunities(debouncedQuery)
+  }, [debouncedQuery, fetchOpportunities])
+
+  const formatDate = (d) => {
+    if (!d) return '—'
+    const s = String(d)
+    return `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}`
+  }
+
+  const selectedStock = selected !== null ? stocks.find(s => s.rank === selected) : null
+
+  return (
+    <div className="space-y-6">
+
+      {/* ── 专属板块搜索栏（500ms 防抖 + 中文 IME 保护）── */}
+      <div className="flex flex-col md:flex-row items-center gap-3 p-4 rounded-xl bg-[#151d32] border border-[#1e2a44]">
+        <div className="flex-1 w-full relative">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <input
+            type="text"
+            placeholder="输入行业或板块 (如: 半导体, 创业板, 汽车)..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') triggerNow(query) }}
+            onCompositionStart={() => { composing.current = true }}
+            onCompositionEnd={(e) => {
+              composing.current = false
+              setQuery(e.target.value)
+            }}
+            className="w-full bg-[#0B1220] border border-[#2A3F5F] text-white rounded-lg py-3 pl-12 pr-10 focus:outline-none focus:border-purple-500 transition-colors"
+          />
+          {query && (
+            <button 
+              onClick={() => triggerNow('')}
+              className="absolute right-4 top-1/2 -translate-y-1/2 p-1 hover:bg-[#2A3F5F] rounded-md text-gray-400 transition-colors"
+              title="清除"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+        <div className="flex gap-3 w-full md:w-auto">
+          <button
+            onClick={() => triggerNow(query)}
+            disabled={!query || loading}
+            className="flex-1 md:flex-none px-6 py-3 rounded-lg text-sm font-bold bg-purple-600 hover:bg-purple-500 disabled:bg-purple-600/50 text-white transition-all flex items-center justify-center gap-2"
+          >
+            <Target className="w-4 h-4" />
+            专属板块扫描
+          </button>
+          {activeSector && (
+            <button
+              onClick={() => triggerNow('')}
+              className="px-6 py-3 rounded-lg text-sm font-bold bg-[#2A3F5F] hover:bg-[#3B527A] text-white transition-all flex items-center justify-center gap-2"
+            >
+              <Layers className="w-4 h-4" />
+              全市场
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ── 热门板块快捷按钮 ── */}
+      <div className="flex flex-wrap gap-2">
+        {POPULAR_SECTORS.map(s => (
+          <button
+            key={s}
+            onClick={() => triggerNow(s)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+              activeSector === s
+                ? 'bg-purple-500/20 text-purple-300 border-purple-500/40'
+                : 'bg-[#0B1220] text-gray-400 border-[#222F4C] hover:text-gray-200 hover:border-gray-500/40'
+            }`}
+          >
+            {s}
+          </button>
+        ))}
+      </div>
+
+      {/* ── 数据血统状态跟踪 ── */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 rounded-xl bg-[#151d32] border border-[#1e2a44]">
+        <div className="flex flex-col gap-1">
+          <span className="text-[10px] text-gray-500 font-bold tracking-wider">行情基准日 (Price)</span>
+          <span className="text-sm font-mono text-gray-300">{formatDate(meta.scan_date)}</span>
+        </div>
+        <div className="flex flex-col gap-1">
+          <span className="text-[10px] text-gray-500 font-bold tracking-wider">底层因子引擎 (Factors)</span>
+          <span className={`text-sm font-mono ${meta.factor_date < meta.scan_date ? 'text-amber-400' : 'text-emerald-400'}`}>
+            {formatDate(meta.factor_date)}
+            {meta.factor_date < meta.scan_date && (
+              <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] bg-amber-500/20 border border-amber-500/30 text-amber-500">需重扫</span>
+            )}
+          </span>
+        </div>
+        <div className="flex flex-col gap-1">
+          <span className="text-[10px] text-gray-500 font-bold tracking-wider">筹码分布 (CYQ)</span>
+          <span className={`text-sm font-mono ${meta.cyq_date < meta.scan_date ? 'text-rose-400' : 'text-gray-300'}`}>
+            {formatDate(meta.cyq_date)}
+          </span>
+        </div>
+        <div className="flex flex-col gap-1">
+          <span className="text-[10px] text-gray-500 font-bold tracking-wider">大单资金 (Money Flow)</span>
+          <span className={`text-sm font-mono ${meta.mf_date < meta.scan_date ? 'text-rose-400' : 'text-gray-300'}`}>
+            {formatDate(meta.mf_date)}
+          </span>
+        </div>
+      </div>
+
+      {/* ── 当前扫描目标提示 ── */}
+      {activeSector && (
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-gray-500">当前扫描板块：</span>
+            <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-purple-500/20 text-purple-300 border border-purple-500/40">
+              {activeSector}
+            </span>
+          </div>
+          <div className="flex items-center gap-3">
+            {lastUpdate && (
+              <span className="text-xs text-gray-500 font-mono">
+                {lastUpdate.toLocaleTimeString('zh-CN', { hour12: false })} 刷新
+              </span>
+            )}
+            <button
+              onClick={() => fetchOpportunities(activeSector)}
+              disabled={loading}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold bg-purple-600/20 text-purple-400 border border-purple-600/30 hover:bg-purple-600/30 hover:text-purple-200 active:scale-95 transition-all disabled:opacity-50"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+              <span>{loading ? '刷新...' : '刷新'}</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── 统计卡片 ── */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[
+          { icon: <BarChart3 className="h-5 w-5 text-sky-400" />, label: '板块内扫描', value: meta.total_scanned?.toLocaleString() ?? '—', sub: '只股票参与打分', color: 'border-sky-500/20' },
+          { icon: <Target className="h-5 w-5 text-emerald-400" />, label: '筛选通过', value: meta.after_filter ?? '—', sub: '满足建仓条件', color: 'border-emerald-500/20' },
+          { icon: <Zap className="h-5 w-5 text-purple-400" />, label: '精选推荐', value: meta.final_count ?? '—', sub: '综合评分最优', color: 'border-purple-500/20' },
+          { icon: <Activity className="h-5 w-5 text-amber-400" />, label: '因子截止', value: formatDate(meta.factor_date), sub: `资金: ${formatDate(meta.mf_date)}`, color: 'border-amber-500/20' },
+        ].map((c, i) => (
+          <div key={i} className={`p-5 bg-[#151D30]/80 rounded-2xl border ${c.color} border-[#222F4C] space-y-1`}>
+            <div className="flex items-center gap-2">
+              {c.icon}
+              <span className="text-xs text-gray-400 font-mono">{c.label}</span>
+            </div>
+            <div className="text-2xl font-bold font-mono text-gray-100">{c.value}</div>
+            <div className="text-xs text-gray-500">{c.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── 主表格 + 详情面板 ── */}
+      <div className="flex flex-col lg:flex-row gap-4">
+        <div className={`${selected ? 'w-full lg:w-3/5' : 'w-full'} transition-all duration-300`}>
+          {loading ? (
+            <div className="p-16 flex flex-col items-center gap-4 text-gray-500">
+              <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-purple-500" />
+              <span className="font-mono text-sm">正在扫描板块内股票...</span>
+            </div>
+          ) : stocks.length === 0 ? (
+            <div className="p-16 text-center text-gray-500 font-mono">
+              <Target className="h-12 w-12 mx-auto mb-3 opacity-30" />
+              <p>「{activeSector || '全市场'}」内当前无满足条件的机会</p>
+              <p className="text-xs mt-1">请尝试切换其他板块关键词</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-2xl border border-[#222F4C] bg-[#151D30]/60">
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="bg-[#0E1524] text-gray-400 font-mono text-xs border-b border-[#222F4C] whitespace-nowrap">
+                    <th className="p-3 pl-5 text-left">排名</th>
+                    <th className="p-3 text-left">代码 / 名称</th>
+                    <th className="p-3 text-left">行业</th>
+                    <th className="p-3 text-right">今日涨跌</th>
+                    <th className="p-3">建仓评分</th>
+                    <th className="p-3 text-right">MVO 权重</th>
+                    <th className="p-3 text-right">收盘价</th>
+                    <th className="p-3 text-right pr-5">主力净流入</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#222F4C]/40 font-mono">
+                  {stocks.map(s => (
+                    <tr
+                      key={s.ts_code}
+                      onClick={() => setSelected(selected === s.rank ? null : s.rank)}
+                      className={`cursor-pointer transition-colors ${selected === s.rank ? 'bg-purple-900/20 border-l-2 border-purple-500' : 'hover:bg-[#1A253D]/40'}`}
+                    >
+                      <td className="p-3 pl-5 whitespace-nowrap">
+                        <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                          s.rank <= 3 ? 'bg-purple-500/25 text-purple-300 border border-purple-500/40' : 'text-gray-500'
+                        }`}>{s.rank}</span>
+                      </td>
+                      <td className="p-3 whitespace-nowrap">
+                        <a
+                          href={`http://quote.eastmoney.com/${s.ts_code.substring(7, 9).toLowerCase()}${s.ts_code.substring(0, 6)}.html`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="hover:underline cursor-pointer flex flex-col"
+                        >
+                          <div className="font-bold text-gray-200 text-xs hover:text-indigo-300">{s.ts_code}</div>
+                          <div className="text-gray-100 font-sans font-semibold hover:text-indigo-400">{s.name}</div>
+                          {s.stats && (
+                            <div className="flex items-center gap-1 mt-1">
+                              {s.stats.consecutive_days > 1 && (
+                                <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-orange-500/20 text-orange-400 border border-orange-500/30 whitespace-nowrap">连 {s.stats.consecutive_days} 天</span>
+                              )}
+                              {s.stats.ever_top_3 && (
+                                <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-fuchsia-500/20 text-fuchsia-400 border border-fuchsia-500/30 whitespace-nowrap">曾前三</span>
+                              )}
+                            </div>
+                          )}
+                        </a>
+                      </td>
+                      <td className="p-3 text-gray-400 font-sans text-xs whitespace-nowrap">{s.industry}</td>
+                      <td className="p-3 text-right whitespace-nowrap"><PctChg value={s.pct_chg} /></td>
+                      <td className="p-3 whitespace-nowrap">
+                        <div className="flex flex-col gap-1 items-start">
+                          <ScoreBar value={s.build_score} />
+                          <BuildGrade score={s.build_score} />
+                        </div>
+                      </td>
+                      <td className="p-3 text-right font-bold text-sky-400 whitespace-nowrap">{s.mvo_weight !== undefined && s.mvo_weight !== null ? `${s.mvo_weight}%` : '均权'}</td>
+                      <td className="p-3 text-right text-gray-300 whitespace-nowrap">
+                        {safeValue(s.close, 2, '—')} 元
+                      </td>
+                      <td className="p-3 pr-5 text-right whitespace-nowrap">
+                        {(() => {
+                          const v = Number(s.big_net_inflow)
+                          const invalid = s.big_net_inflow === null || s.big_net_inflow === undefined || isNaN(v) || !isFinite(v)
+                          if (invalid) return <span className="font-bold text-xs text-gray-500">—</span>
+                          return (
+                            <span className={`font-bold text-xs ${v > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
+                              {v > 0 ? '+' : ''}{v.toFixed(2)} 亿
+                            </span>
+                          )
+                        })()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* 详情面板 */}
+        {selectedStock && (
+          <>
+            <div className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden transition-opacity" 
+              onClick={() => setSelected(null)} />
+            
+            <div className="fixed inset-x-0 bottom-0 z-50 p-5 pb-8 bg-[#0B1220] rounded-t-3xl border-t border-purple-500/30 max-h-[85vh] overflow-y-auto lg:sticky lg:top-0 lg:self-start lg:block lg:w-2/5 lg:bg-transparent lg:border-none lg:p-0 lg:pb-0 lg:rounded-none lg:max-h-[calc(100vh-8rem)] lg:overflow-y-auto space-y-4 shrink-0 shadow-2xl lg:shadow-none">
+              
+              <div className="w-12 h-1.5 bg-gray-600 rounded-full mx-auto mb-4 lg:hidden" />
+
+              <div className="lg:p-5 lg:bg-[#151D30]/90 lg:rounded-2xl lg:border lg:border-purple-500/30 space-y-4">
+                {/* 股票标题 */}
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="text-lg font-bold text-gray-100">{selectedStock.name}</div>
+                    <div className="text-xs text-gray-400 font-mono">{selectedStock.ts_code} · {selectedStock.industry}</div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <BuildGrade score={selectedStock.build_score} />
+                    <button onClick={() => setSelected(null)} className="lg:hidden p-1.5 bg-[#1A253D] rounded-full text-gray-400 hover:text-white transition-colors">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* 信号详情 */}
+                <div className="space-y-3">
+                  <div className="text-xs text-gray-500 font-mono uppercase tracking-widest">信号详情</div>
+                  {[
+                    { label: '因子信号强度', value: selectedStock.factor_score,    icon: <BarChart3 className="h-4 w-4 text-purple-400" />, suffix: '%' },
+                    { label: '筹码胜率',     value: selectedStock.winner_rate,     icon: <Target className="h-4 w-4 text-sky-400" />,    suffix: '%' },
+                    { label: '筹码集中度',   value: selectedStock.chips_peak_pct,  icon: <Layers className="h-4 w-4 text-sky-300" />,    suffix: '%' },
+                    { label: '主力净流入',   value: selectedStock.big_net_inflow,  icon: <DollarSign className="h-4 w-4 text-rose-500" />, suffix: ' 亿', isInflow: true },
+                    { label: '20日换手率',   value: selectedStock.turnover_rate,   icon: <Activity className="h-4 w-4 text-amber-400" />,  suffix: '%' },
+                    { label: 'MVO 建议权重', value: selectedStock.mvo_weight,      icon: <Sparkles className="h-4 w-4 text-emerald-400" />, suffix: '%' },
+                  ].map((item, i) => {
+                    const num = Number(item.value)
+                    const invalid = item.value === null || item.value === undefined || isNaN(num) || !isFinite(num)
+                    let display, colorClass = 'text-gray-100'
+                    if (invalid) {
+                      display = '—'
+                    } else if (item.isInflow) {
+                      display = `${num >= 0 ? '+' : ''}${Math.abs(num).toFixed(2)}${item.suffix}`
+                      colorClass = num >= 0 ? 'text-rose-500' : 'text-emerald-500'
+                    } else {
+                      display = `${num.toFixed(1)}${item.suffix}`
+                    }
+                    return (
+                      <div key={i} className="flex items-center justify-between py-2 border-b border-[#1A253D]">
+                        <div className="flex items-center gap-2">
+                          {item.icon}
+                          <span className="text-xs text-gray-400">{item.label}</span>
+                        </div>
+                        <span className={`text-sm font-bold font-mono ${colorClass}`}>{display}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {/* 建仓理由 */}
+                <div className="p-3 bg-[#0B1220]/80 rounded-xl border border-[#1A253D]">
+                  <div className="text-xs text-gray-500 font-mono mb-1.5 flex items-center gap-1">
+                    <Info className="h-3 w-3" /> 建仓依据
+                  </div>
+                  <div className="text-xs text-gray-300 leading-relaxed font-sans">
+                    {selectedStock.reason || '暂无详细建仓依据。'}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* ── 提示 ── */}
+      <div className="p-3 rounded-xl bg-amber-900/10 border border-amber-700/20">
+        <p className="text-xs text-amber-400/80 font-sans leading-relaxed">
+          ⚠️ 板块扫描基于行业关键词模糊匹配。如果搜索结果为空，请尝试：① 使用更宽泛的关键词（如"电子"代替"半导体"）② 切换到"实时全市场"模式查看完整清单。
+        </p>
+      </div>
+    </div>
+  )
+}

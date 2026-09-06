@@ -16,7 +16,7 @@ import sys
 import os
 import json
 import logging
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -141,9 +141,58 @@ def evo_compare_portfolio(top_n: int = Query(10, ge=5, le=30)) -> Dict[str, Any]
     return clean_nan_inf(result)
 
 
+def _evo_scan_enrichments(codes: List[str]) -> Tuple[Dict[str, Dict[str, Any]], Optional[str]]:
+    """
+    给经典扫描/画像股票列表叠加 EVO 增强列（阶段 3 融合）：
+      cross_mean           enabled 交叉因子均值（0~1，越高越强）
+      graham_score         0~7 防御项数
+      text_sentiment_score 当日文本情绪 rank
+      ml_rank_score        当日 LambdaRank 排序分（不在 ML 覆盖内则缺省）
+    返回 ({ts_code: {列: 值}}, factor_date)
+    """
+    out: Dict[str, Dict[str, Any]] = {}
+    factor_date = None
+    codes = [c for c in (codes or []) if c]
+    if not codes:
+        return out, factor_date
+    try:
+        from services.evo import get_db_connection
+        conn = get_db_connection()
+        try:
+            last = conn.execute("SELECT MAX(trade_date) FROM factor_values_evo").fetchone()
+            fdate = str(last[0]) if last and last[0] else None
+            if not fdate:
+                return out, factor_date
+            factor_date = fdate
+            ph = ",".join("?" * len(codes))
+            enabled = [k for k, v in (EvoConfig.get("cross_factors.factors", {}) or {}).items() if v]
+            cross_expr = (("(" + " + ".join(f"COALESCE({c},0)" for c in enabled) + f") / {len(enabled)}")
+                          if enabled else "NULL")
+            cur = conn.execute(
+                f"SELECT ts_code, {cross_expr} AS cross_mean, graham_score, text_sentiment_score "
+                f"FROM factor_values_evo WHERE trade_date = ? AND ts_code IN ({ph})",
+                [fdate, *codes])
+            cols = [d[0] for d in cur.description]
+            for r in cur.fetchall():
+                d = dict(zip(cols, r))
+                ts = d.pop("ts_code")
+                out[ts] = d
+            cur2 = conn.execute(
+                f"SELECT ts_code, rank_score FROM evo_ml_predictions "
+                f"WHERE trade_date = ? AND ts_code IN ({ph})",
+                [fdate, *codes])
+            for ts, rs in cur2.fetchall():
+                out.setdefault(ts, {})["ml_rank_score"] = rs
+        finally:
+            conn.close()
+    except Exception as _e:
+        _logger.warning(f"[EvoEnrich] 增强列查询失败: {_e}")
+    return out, factor_date
+
+
 @router.get("/compare/scan")
 def evo_compare_scan() -> Dict[str, Any]:
-    """经典 vs 进化 建仓扫描 A/B 对比（阶段 1 实现交叉因子后填充 EVO 侧）"""
+    """经典 vs 进化 建仓扫描 A/B 对比（EVO 侧 = 经典扫描池 × EVO 增强列后重排）"""
     classic = {"error": "classic_scan_not_ready", "stocks": []}
     try:
         from services import get_build_position_opportunities as _classic_scan_fn
@@ -151,11 +200,30 @@ def evo_compare_scan() -> Dict[str, Any]:
     except Exception as _e:
         _logger.warning(f"[Compare] 经典 scan 获取失败: {_e}")
 
+    # EVO 侧：同一扫描池叠加 EVO 增强列，按交叉因子均值重排（拥挤度/权重已作用于打分层）
+    evo_stocks: List[Dict[str, Any]] = []
+    factor_date = None
+    try:
+        cl_stocks = [s for s in (classic.get("stocks") or []) if isinstance(s, dict)]
+        codes = [s.get("ts_code") for s in cl_stocks if s.get("ts_code")]
+        enr, factor_date = _evo_scan_enrichments(codes)
+        for s in cl_stocks:
+            e = dict(enr.get(s.get("ts_code")) or {})
+            if e:
+                s = {**s, "evo": e}
+                evo_stocks.append(s)
+        evo_stocks.sort(
+            key=lambda r: (r.get("evo", {}).get("cross_mean") or -1), reverse=True)
+    except Exception as _e:
+        _logger.warning(f"[Compare] EVO scan 增强失败: {_e}")
+
     return clean_nan_inf({
         "classic": classic,
         "evo": {
-            "stocks": [],
-            "note": "EVO 扫描：阶段 3+ 启用。将融合交叉因子、拥挤度过滤、Graham 评分与动态权重。",
+            "factor_date": factor_date,
+            "count": len(evo_stocks),
+            "stocks": evo_stocks,
+            "note": "EVO 扫描 = 经典扫描池 × 增强列（cross_mean 交叉均值 / graham_score / ml_rank_score / text_sentiment），按 cross_mean 重排。",
         },
     })
 
@@ -749,16 +817,27 @@ def evo_portfolio(top_n: int = Query(10, ge=5, le=30)) -> Dict[str, Any]:
 
 @router.get("/scan-opportunities")
 def evo_scan_opportunities(top_n: int = Query(30, ge=5, le=200)) -> Dict[str, Any]:
-    """EVO 版建仓扫描（阶段 3 起融合交叉/拥挤/动态权重）"""
+    """EVO 版建仓扫描（阶段 3 融合：每只扫描股附带 EVO 增强列）"""
     try:
         from services import get_build_position_opportunities as _csf
         base = _csf() or {}
     except Exception as _e:
+        _logger.warning(f"[EvoScan] 经典扫描获取失败: {_e}")
         base = {"stocks": [], "meta": {}}
+
+    stocks = [s for s in (base.get("stocks") or []) if isinstance(s, dict)]
+    codes = [s.get("ts_code") for s in stocks if s.get("ts_code")]
+    enr, factor_date = _evo_scan_enrichments(codes)
+    enriched = []
+    for s in stocks:
+        e = dict(enr.get(s.get("ts_code")) or {})
+        enriched.append({**s, "evo": e} if e else s)
+
     return clean_nan_inf({
-        "classic_overlay": base,
-        "evo_enrichments": [],
-        "note": "阶段 3 起：每只扫描股附带 ①交叉因子排名 ②Graham得分 ③拥挤度评分 ④ML rank_score 四列增强信息。",
+        "classic_overlay": {**base, "stocks": enriched},
+        "factor_date": factor_date,
+        "evo_enrichments": ["cross_mean", "graham_score", "ml_rank_score", "text_sentiment_score"],
+        "note": "每只扫描股附 evo 增强列：①cross_mean 交叉因子均值 ②graham_score ③ml_rank_score ④text_sentiment_score；拥挤度作用于因子权重层，已反映在组合打分。",
     })
 
 
@@ -767,22 +846,41 @@ def evo_portrait_pick(
     top_n: int = Query(30, ge=10, le=60),
     strategy: str = Query("left", pattern="^(left|right)$"),
 ) -> Dict[str, Any]:
-    """EVO 版画像建仓三层漏斗（阶段 3+ 融合）"""
+    """EVO 版画像建仓三层漏斗（阶段 3 融合：层一画像分叠加 Graham ±分 + 增强列）"""
     try:
         from services import get_portrait_position_pick as _cppf
         base = _cppf(top_n=top_n, strategy=strategy) or {}
     except Exception as _e:
         _logger.warning(f"[EvoPick] 经典兜底失败: {_e}")
-        base = {"stocks": [], "funnel": {}}
+        base = {"picks": [], "funnel": {}}
+
+    bonus = float(EvoConfig.get("graham_filter.scoring.bonus_points", 5) or 0)
+    penalty = float(EvoConfig.get("graham_filter.scoring.penalty_points", 10) or 0)
+    min_checks = int(EvoConfig.get("graham_filter.min_checks", 4) or 4)
+
+    picks = [p for p in (base.get("picks") or []) if isinstance(p, dict)]
+    codes = [p.get("ts_code") for p in picks if p.get("ts_code")]
+    enr, _pick_factor_date = _evo_scan_enrichments(codes)
+    enriched = []
+    for p in picks:
+        e = dict(enr.get(p.get("ts_code")) or {})
+        gs = e.get("graham_score")
+        ps = p.get("portrait_score")
+        if gs is not None and ps is not None:
+            adj = float(ps) + (bonus if gs >= min_checks else (-penalty if gs <= 1 else 0))
+            e["evo_adjusted_score"] = round(adj, 2)
+        enriched.append({**p, "evo": e} if e else p)
+
     return clean_nan_inf({
         "strategy": strategy,
-        "classic_overlay": base,
+        "classic_overlay": {**base, "picks": enriched},
         "evo_adjustments": {
-            "graham_bonus_points":  EvoConfig.get("graham_filter.scoring.bonus_points", 0),
-            "graham_penalty_points": EvoConfig.get("graham_filter.scoring.penalty_points", 0),
+            "graham_bonus_points":  bonus,
+            "graham_penalty_points": penalty,
+            "graham_min_checks": min_checks,
             "crowding_penalty_enabled": EvoConfig.get("crowding_monitor.enabled", False),
         },
-        "note": "阶段 3 起：在层一画像分上自动叠加 Graham ±分，层二/三叠加拥挤度降权。",
+        "note": "层一画像分已叠加 evo.evo_adjusted_score（Graham ≥min_checks 加 bonus / ≤1 减 penalty），并附 cross_mean / ml_rank_score 增强列。",
     })
 
 

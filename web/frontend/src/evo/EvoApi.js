@@ -68,10 +68,12 @@ export const portraitPick   = (topN = 30, strategy = 'left') =>
 
 // ================== 东方财富行情链接 ==================
 // ts_code（600363.SH / 300274.SZ / 920206.BJ）→ 东方财富个股页
+// ⚠️ 北交所 URL 格式是 bj/920427.html（带斜杠），bj920427.html 会 404
 export const emStockUrl = (tsCode) => {
   if (!tsCode) return '#'
   const [code, exch] = String(tsCode).split('.')
-  const p = exch === 'SH' ? 'sh' : exch === 'BJ' ? 'bj' : 'sz'
+  if (exch === 'BJ') return `https://quote.eastmoney.com/bj/${code}.html`
+  const p = exch === 'SH' ? 'sh' : 'sz'
   return `https://quote.eastmoney.com/${p}${code}.html`
 }
 

@@ -1,0 +1,165 @@
+{
+  "report": "P1-6 在役策略统一口径历史回测",
+  "run_date": "20260903",
+  "generated_at": "2026-09-03 21:42:58",
+  "caliber": {
+    "window_weeks": 208,
+    "window_dates": "20220610 ~ 20260702",
+    "rebalance": "周频（引擎按周切片选股）",
+    "transaction_cost_bps": 15,
+    "transaction_cost_note": "config backtest.transaction_cost=0.0015，买卖双边按引擎逻辑扣除",
+    "benchmark": "等权基准（当周全样本 future_return_5d 截面均值）",
+    "top_n_stocks": 10,
+    "data_path": "agent/validator.validate_factors 对齐面板（与生产巡航/推荐同路径）",
+    "config_source": "config.yaml（巡航未运行/已恢复的在役基线）",
+    "in_service_config_combo": [
+      "excess_return_20d",
+      "max_drawdown_20d",
+      "north_net_inflow_ratio",
+      "vol_ratio"
+    ],
+    "in_service_note": "在役 config.custom_new_factors = 巡航自动部署组合（2026-09-03 12:20 随 regime_weights.pkl 部署，即 P1-3 闸门拦截的刀刃组合）；routed 路由直接读 models/regime_weights.pkl"
+  },
+  "strategies": {
+    "old_core": {
+      "label": "老核心静态组合（平行回测基线）",
+      "in_service": "baseline",
+      "factors": [
+        "turnover_rate",
+        "volatility_10d",
+        "volatility_20d"
+      ],
+      "weights": {
+        "turnover_rate": -0.3277,
+        "volatility_10d": -0.3387,
+        "volatility_20d": -0.3337
+      },
+      "metrics": {
+        "total_return": -0.006354,
+        "annualized_return": -0.001592,
+        "annualized_volatility": 0.118942,
+        "max_drawdown": -0.174544,
+        "calmar_ratio": -0.009122,
+        "excess_total_return": -0.458452,
+        "excess_annual_return": -0.142154,
+        "excess_annual_volatility": 0.191924,
+        "excess_max_drawdown": -0.52497,
+        "excess_calmar_ratio": -0.270786,
+        "win_rate": 0.490385,
+        "excess_win_rate": 0.413462,
+        "weeks": 208.0
+      }
+    },
+    "custom_new": {
+      "label": "在役配置组合（config factors.custom_new_factors = 巡航自动部署 combo10 四因子，固定组合样本内回测）",
+      "in_service": "deployed_config",
+      "factors": [
+        "excess_return_20d",
+        "max_drawdown_20d",
+        "north_net_inflow_ratio",
+        "vol_ratio"
+      ],
+      "weights": {
+        "excess_return_20d": -0.2775,
+        "max_drawdown_20d": 0.1561,
+        "north_net_inflow_ratio": -0.2055,
+        "vol_ratio": -0.361
+      },
+      "metrics": {
+        "total_return": 0.978761,
+        "annualized_return": 0.186037,
+        "annualized_volatility": 0.305739,
+        "max_drawdown": -0.315553,
+        "calmar_ratio": 0.589559,
+        "excess_total_return": 0.23592,
+        "excess_annual_return": 0.054381,
+        "excess_annual_volatility": 0.214121,
+        "excess_max_drawdown": -0.275084,
+        "excess_calmar_ratio": 0.197689,
+        "win_rate": 0.485577,
+        "excess_win_rate": 0.495192,
+        "weeks": 208.0
+      }
+    },
+    "routed": {
+      "label": "多状态路由组合【生产在役实盘路径：regime_weights.pkl + bull_weights + 防御池 + 贝塔剥离/误差回响/Dark轻仓】",
+      "in_service": "production",
+      "factors": null,
+      "weights": null,
+      "metrics": {
+        "total_return": -0.005681,
+        "annualized_return": -0.001423,
+        "annualized_volatility": 0.266539,
+        "max_drawdown": -0.389234,
+        "calmar_ratio": -0.003656,
+        "excess_total_return": -0.394615,
+        "excess_annual_return": -0.11792,
+        "excess_annual_volatility": 0.189474,
+        "excess_max_drawdown": -0.55564,
+        "excess_calmar_ratio": -0.212224,
+        "win_rate": 0.4375,
+        "excess_win_rate": 0.389423,
+        "weeks": 208.0
+      },
+      "route_summary": {
+        "range_weeks": 86,
+        "bull_weeks": 21,
+        "empty_weeks": 0,
+        "defense_weeks": 101,
+        "total_weeks": 208
+      }
+    },
+    "jack": {
+      "label": "游资 Jack 路由（硬编码抄底/追涨，参考项，非生产自动部署）",
+      "in_service": "reference",
+      "factors": [
+        "RANGE: return_5d/north_net_inflow_ratio/turnover_rate_20d",
+        "BULL: return_5d/volatility_10d/vol_ratio",
+        "DARK/BEAR: 空仓"
+      ],
+      "weights": null,
+      "metrics": {
+        "total_return": -0.272527,
+        "annualized_return": -0.076463,
+        "annualized_volatility": 0.132851,
+        "max_drawdown": -0.274343,
+        "calmar_ratio": -0.278714,
+        "excess_total_return": -0.612067,
+        "excess_annual_return": -0.210796,
+        "excess_annual_volatility": 0.224653,
+        "excess_max_drawdown": -0.642183,
+        "excess_calmar_ratio": -0.328249,
+        "win_rate": 0.677885,
+        "excess_win_rate": 0.403846,
+        "weeks": 208.0
+      },
+      "route_summary": {
+        "range_weeks": 86,
+        "bull_weeks": 21,
+        "empty_weeks": 101,
+        "defense_weeks": 0,
+        "total_weeks": 208
+      }
+    }
+  },
+  "scanner_tracker": {
+    "source": "db/stock_data.db recommendation_tracker（P0-3 清洗后最终日快照）",
+    "total_rows": 1609,
+    "alpha_5d_non_null": 1518,
+    "recommend_days": 33,
+    "window": "20260709 ~ 20260827",
+    "all_picks": {
+      "alpha_5d_mean_pct": -0.404,
+      "alpha_5d_median_pct": -0.879,
+      "win_rate_pct": 43.2
+    },
+    "daily_top10": {
+      "samples": 322,
+      "alpha_5d_mean_pct": 1.215,
+      "win_rate_pct": 47.2,
+      "positive_day_ratio_pct": 36.4
+    },
+    "note": "scanner 为 web 层复合打分（factor_score/winner_rate/net_mf/pct_chg），不适用因子引擎回测；以真实推荐前瞻实绩为在役证据。daily_top10 按推荐时 factor_score 当日排名取前 10（非按未来收益排序，无前视偏差）"
+  },
+  "decision_note": "routed 为生产在役实盘路径（周度 regime 路由+防御切换，直接消费 models/regime_weights.pkl）；custom_new 为在役 config 固定组合（2026-09-03 12:20 巡航自动部署的 combo10）的样本内平行回测；old_core 为引擎基线；jack 仅参考非自动部署；scanner（胜率猎手）无因子引擎口径，以 tracker 前瞻实绩为在役证据。注意：custom_new 样本内为正而 routed/old_core 超额为负，差异来自路由/防御/空仓周与权重消费方式，且 tracker 前瞻（32 推荐日）显示实盘 alpha_5d 均值 -0.40% —— 样本内优势未在实盘兑现。"
+}

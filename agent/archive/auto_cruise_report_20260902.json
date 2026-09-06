@@ -1,0 +1,11 @@
+{
+    "run_date": "20260902",
+    "success_target_reached": false,
+    "best_overall_excess_calmar": null,
+    "best_overall_combination": null,
+    "best_overall_params": null,
+    "best_overall_factors": null,
+    "best_overall_weights": null,
+    "total_loops_tried": 0,
+    "search_trajectory": []
+}

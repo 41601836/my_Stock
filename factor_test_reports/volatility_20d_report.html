@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>因子测试报告 — volatility_20d</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background:#f5f6fa; color:#2c3e50; padding:20px; }
+.container { max-width:1100px; margin:0 auto; }
+.header { background:linear-gradient(135deg,#2c3e50 0%,#34495e 100%); color:#fff; padding:30px; border-radius:12px; margin-bottom:20px; }
+.header h1 { font-size:28px; margin-bottom:8px; }
+.header .meta { display:flex; flex-wrap:wrap; gap:15px; font-size:14px; opacity:0.9; }
+.badge { display:inline-block; padding:3px 10px; border-radius:4px; font-size:12px; font-weight:600; }
+.section { background:#fff; border-radius:12px; padding:25px; margin-bottom:20px; box-shadow:0 2px 8px rgba(0,0,0,0.06); }
+.section h2 { font-size:20px; margin-bottom:15px; padding-bottom:10px; border-bottom:2px solid #ecf0f1; }
+table { width:100%; border-collapse:collapse; margin:10px 0; font-size:14px; }
+th { background:#ecf0f1; padding:10px 12px; text-align:left; font-weight:600; border-radius:4px; }
+td { padding:8px 12px; border-bottom:1px solid #ecf0f1; }
+tr:hover { background:#f8f9fa; }
+.chart { width:100%; height:350px; margin:15px 0; }
+.chart-row { display:flex; gap:20px; flex-wrap:wrap; }
+.chart-half { flex:1; min-width:400px; }
+.pass { color:#e74c3c; font-weight:600; }
+.fail { color:#2ecc71; font-weight:600; }
+.summary-box { display:flex; gap:15px; flex-wrap:wrap; margin-bottom:15px; }
+.summary-card { flex:1; min-width:150px; background:#f8f9fa; border-radius:8px; padding:15px; text-align:center; }
+.summary-card .value { font-size:24px; font-weight:700; }
+.summary-card .label { font-size:12px; color:#95a5a6; margin-top:4px; }
+</style>
+</head>
+<body>
+<div class="container">
+<div class="header">
+  <h1>因子测试报告 — volatility_20d</h1>
+  <div class="meta">
+    <span>方向: <span class="badge" style="background:#2ecc71">反向（值小越好）</span></span>
+    <span>分类: 波动率</span>
+    <span>描述: 20日收益率标准差</span>
+    <span>测试区间: 20250101 ~ 20250630</span>
+    <span>生成时间: 2026-09-02 23:08</span>
+  </div>
+</div>
+
+<div class="section"><h2>IC 分析</h2>
+<div id="ic_series" class="chart" style="height:350px"></div>
+<script>var c=echarts.init(document.getElementById("ic_series"));c.setOption({"title": {"text": "Rank IC 时序", "left": "center", "textStyle": {"fontSize": 14}}, "tooltip": {"trigger": "axis"}, "xAxis": {"type": "category", "data": ["20250102", "20250103", "20250106", "20250107", "20250108", "20250109", "20250110", "20250113", "20250114", "20250115", "20250116", "20250117", "20250120", "20250121", "20250122", "20250123", "20250124", "20250127", "20250205", "20250206", "20250207", "20250210", "20250211", "20250212", "20250213", "20250214", "20250217", "20250218", "20250219", "20250220", "20250221", "20250224", "20250225", "20250226", "20250227", "20250228", "20250303", "20250304", "20250305", "20250306", "20250307", "20250310", "20250311", "20250312", "20250313", "20250314", "20250317", "20250318", "20250319", "20250320", "20250321", "20250324", "20250325", "20250326", "20250327", "20250328", "20250331", "20250401", "20250402", "20250403", "20250407", "20250408", "20250409", "20250410", "20250411", "20250414", "20250415", "20250416", "20250417", "20250418", "20250421", "20250422", "20250423", "20250424", "20250425", "20250428", "20250429", "20250430", "20250506", "20250507", "20250508", "20250509", "20250512", "20250513", "20250514", "20250515", "20250516", "20250519", "20250520", "20250521", "20250522", "20250523", "20250526", "20250527", "20250528", "20250529", "20250530", "20250603", "20250604", "20250605", "20250606", "20250609", "20250610", "20250611", "20250612", "20250613", "20250616", "20250617", "20250618", "20250619", "20250620", "20250623"], "axisLabel": {"rotate": 45, "fontSize": 10}}, "yAxis": {"type": "value", "name": "IC"}, "series": [{"type": "line", "data": [-0.123715, 0.070103, 0.225969, 0.255629, 0.19341, 0.094638, 0.239902, 0.373477, 0.08535, -0.039307, -0.145486, 0.007078, -0.359173, -0.179785, 0.078252, 0.203676, 0.307441, 0.429261, 0.432949, 0.22359, 0.089531, 0.058598, -0.104243, -0.039471, 0.147778, 0.268911, 0.101344, 0.342182, 0.154204, 0.005267, -0.277201, -0.284845, -0.297986, -0.23203, 0.006966, 0.187762, 0.187003, 0.065669, 0.061075, -0.303563, -0.221516, -0.240155, -0.172603, -0.33982, -0.139998, -0.372347, -0.46221, -0.548352, -0.541757, -0.507798, -0.353527, -0.237184, -0.175043, -0.169922, -0.248849, -0.279845, -0.452809, -0.379678, -0.34229, -0.224546, -0.001922, 0.467802, 0.246641, 0.090851, -0.055895, -0.05673, -0.089959, 0.255078, 0.062628, 0.0785, -0.197048, -0.069696, -0.015769, 0.190455, 0.232202, 0.349237, 0.195422, 0.166261, -0.103418, -0.156456, -0.255761, -0.035934, -0.014278, 0.057591, 0.013003, -0.05646, -0.213384, -0.189794, -0.216456, -0.1851, -0.030583, -0.105829, -0.134514, -0.093782, -0.02895, -0.144425, 0.158089, 0.043707, -0.053551, -0.082563, -0.165668, -0.2072, -0.246579, -0.260957, -0.380004, -0.343112, -0.307436, -0.09455, -0.078258, 0.04099, 0.175426, 0.211363], "symbol": "none", "lineStyle": {"color": "#3498db", "width": 1}, "areaStyle": {"opacity": 0.1}}], "dataZoom": [{"type": "inside"}, {"type": "slider"}]});</script>
+<div id="ic_decay" class="chart" style="height:350px"></div>
+<script>var c=echarts.init(document.getElementById("ic_decay"));c.setOption({"title": {"text": "IC 衰减曲线", "left": "center", "textStyle": {"fontSize": 14}}, "tooltip": {"trigger": "axis"}, "xAxis": {"type": "category", "data": ["1", "3", "5", "10", "20"], "name": "持仓周期(天)"}, "yAxis": {"type": "value", "name": "IC 均值"}, "series": [{"type": "bar", "data": [-0.040893, -0.04844, -0.049436, -0.048222, -0.026287], "itemStyle": {"color": "#f39c12"}, "label": {"show": true, "position": "top", "formatter": "{c}"}}]});</script>
+<div id="ic_cum" class="chart" style="height:350px"></div>
+<script>var c=echarts.init(document.getElementById("ic_cum"));c.setOption({"title": {"text": "IC 累积曲线", "left": "center", "textStyle": {"fontSize": 14}}, "tooltip": {"trigger": "axis"}, "xAxis": {"type": "category", "data": ["20250102", "20250103", "20250106", "20250107", "20250108", "20250109", "20250110", "20250113", "20250114", "20250115", "20250116", "20250117", "20250120", "20250121", "20250122", "20250123", "20250124", "20250127", "20250205", "20250206", "20250207", "20250210", "20250211", "20250212", "20250213", "20250214", "20250217", "20250218", "20250219", "20250220", "20250221", "20250224", "20250225", "20250226", "20250227", "20250228", "20250303", "20250304", "20250305", "20250306", "20250307", "20250310", "20250311", "20250312", "20250313", "20250314", "20250317", "20250318", "20250319", "20250320", "20250321", "20250324", "20250325", "20250326", "20250327", "20250328", "20250331", "20250401", "20250402", "20250403", "20250407", "20250408", "20250409", "20250410", "20250411", "20250414", "20250415", "20250416", "20250417", "20250418", "20250421", "20250422", "20250423", "20250424", "20250425", "20250428", "20250429", "20250430", "20250506", "20250507", "20250508", "20250509", "20250512", "20250513", "20250514", "20250515", "20250516", "20250519", "20250520", "20250521", "20250522", "20250523", "20250526", "20250527", "20250528", "20250529", "20250530", "20250603", "20250604", "20250605", "20250606", "20250609", "20250610", "20250611", "20250612", "20250613", "20250616", "20250617", "20250618", "20250619", "20250620", "20250623"], "axisLabel": {"rotate": 45, "fontSize": 10}}, "yAxis": {"type": "value", "name": "累积 IC"}, "series": [{"type": "line", "data": [-0.123715, -0.053612, 0.172357, 0.427986, 0.621396, 0.716034, 0.955936, 1.329412, 1.414762, 1.375455, 1.229969, 1.237047, 0.877874, 0.698089, 0.776341, 0.980017, 1.287458, 1.716719, 2.149668, 2.373258, 2.46279, 2.521387, 2.417144, 2.377673, 2.525451, 2.794362, 2.895706, 3.237887, 3.392091, 3.397358, 3.120157, 2.835312, 2.537326, 2.305297, 2.312263, 2.500025, 2.687028, 2.752697, 2.813772, 2.510208, 2.288692, 2.048537, 1.875935, 1.536115, 1.396117, 1.023771, 0.56156, 0.013209, -0.528548, -1.036346, -1.389874, -1.627058, -1.802101, -1.972023, -2.220873, -2.500718, -2.953527, -3.333205, -3.675494, -3.900041, -3.901963, -3.434161, -3.18752, -3.096668, -3.152564, -3.209294, -3.299253, -3.044174, -2.981547, -2.903046, -3.100095, -3.169791, -3.185559, -2.995104, -2.762902, -2.413665, -2.218243, -2.051982, -2.155401, -2.311856, -2.567617, -2.603551, -2.617829, -2.560238, -2.547235, -2.603695, -2.81708, -3.006873, -3.223329, -3.408429, -3.439012, -3.544841, -3.679355, -3.773137, -3.802086, -3.946511, -3.788422, -3.744715, -3.798266, -3.880829, -4.046497, -4.253697, -4.500276, -4.761233, -5.141237, -5.484349, -5.791785, -5.886336, -5.964593, -5.923604, -5.748178, -5.536815], "symbol": "none", "lineStyle": {"color": "#9b59b6", "width": 1.5}, "areaStyle": {"opacity": 0.1}}], "dataZoom": [{"type": "inside"}, {"type": "slider"}]});</script>
+<h3 style="margin:15px 0 5px; font-size:16px;">IC 统计摘要</h3>
+<table>
+<thead><tr><th>指标</th><th>值</th></tr></thead>
+<tbody>
+<tr><td>IC 均值</td><td>-0.049436</td></tr>
+<tr><td>IC 标准差</td><td>0.226445</td></tr>
+<tr><td>ICIR</td><td>-0.2183</td></tr>
+<tr><td>t 统计量</td><td>-2.3104</td></tr>
+<tr><td>p 值</td><td>2.2714e-02</td></tr>
+<tr><td>IC 正比例</td><td>41.07%</td></tr>
+<tr><td>样本天数</td><td>112</td></tr>
+</tbody>
+</table>
+
+<h3 style="margin:15px 0 5px; font-size:16px;">分年度 IC 稳定性</h3>
+<table>
+<thead><tr><th>年份</th><th>天数</th><th>IC均值</th><th>ICIR</th><th>t值</th><th>p值</th><th>正比例</th></tr></thead>
+<tbody>
+<tr><td>2025</td><td>112</td><td>-0.049436</td><td>-0.2183</td><td>-2.3104</td><td>2.2714e-02</td><td>41.07%</td></tr>
+</tbody>
+</table>
+
+</div>
+
+<div class="section"><h2>分层测试</h2>
+<div id="group_nav" class="chart" style="height:350px"></div>
+<script>var c=echarts.init(document.getElementById("group_nav"));c.setOption({"title": {"text": "分组净值曲线", "left": "center", "textStyle": {"fontSize": 14}}, "tooltip": {"trigger": "axis"}, "legend": {"top": 30}, "xAxis": {"type": "category", "data": ["20250103", "20250110", "20250117", "20250124", "20250127", "20250207", "20250214", "20250221", "20250228", "20250307", "20250314", "20250321", "20250328", "20250403", "20250411", "20250418", "20250425", "20250430", "20250509", "20250516", "20250523", "20250530", "20250606", "20250613", "20250620"], "axisLabel": {"rotate": 45, "fontSize": 10}}, "yAxis": {"type": "value", "name": "净值"}, "series": [{"name": "g1", "type": "line", "data": [0.9761, 1.0037, 1.002, 1.0193, 1.0296, 1.0313, 1.0239, 1.0224, 1.0293, 1.0589, 1.0665, 1.0661, 0.9928, 0.955, 0.9645, 0.9725, 0.979, 1.0043, 1.0124, 1.012, 1.0232, 1.0363, 1.0333, 1.0247, 1.0477], "symbol": "none", "lineStyle": {"color": "#2ecc71", "width": 1.5}}, {"name": "g2", "type": "line", "data": [0.9823, 1.0195, 1.0226, 1.0496, 1.0734, 1.0783, 1.0741, 1.0666, 1.0808, 1.1124, 1.114, 1.102, 1.012, 0.9606, 0.9694, 0.9882, 1.0047, 1.0393, 1.0468, 1.0452, 1.0521, 1.0764, 1.0732, 1.0608, 1.1012], "symbol": "none", "lineStyle": {"color": "#1abc9c", "width": 1.5}}, {"name": "g3", "type": "line", "data": [0.9907, 1.0368, 1.0422, 1.0887, 1.1313, 1.1431, 1.1535, 1.1493, 1.1724, 1.2061, 1.2047, 1.1867, 1.0795, 1.0207, 1.0405, 1.063, 1.0971, 1.1422, 1.1493, 1.1437, 1.1585, 1.1996, 1.1927, 1.1694, 1.2203], "symbol": "none", "lineStyle": {"color": "#95a5a6", "width": 1.5}}, {"name": "g4", "type": "line", "data": [0.9994, 1.0526, 1.0657, 1.13, 1.2065, 1.2309, 1.2519, 1.2364, 1.2717, 1.3004, 1.28, 1.2544, 1.1317, 1.0746, 1.088, 1.1182, 1.1533, 1.205, 1.2138, 1.2021, 1.213, 1.254, 1.2455, 1.2181, 1.2746], "symbol": "none", "lineStyle": {"color": "#f39c12", "width": 1.5}}, {"name": "g5", "type": "line", "data": [0.9819, 1.0308, 1.026, 1.0804, 1.1602, 1.1939, 1.2418, 1.2023, 1.2432, 1.2559, 1.2279, 1.172, 1.0561, 0.9876, 0.9921, 1.0094, 1.052, 1.1031, 1.126, 1.1161, 1.1267, 1.1605, 1.1528, 1.1066, 1.1625], "symbol": "none", "lineStyle": {"color": "#e74c3c", "width": 1.5}}], "dataZoom": [{"type": "inside"}, {"type": "slider"}]});</script>
+<div id="ls_nav" class="chart" style="height:350px"></div>
+<script>var c=echarts.init(document.getElementById("ls_nav"));c.setOption({"title": {"text": "多空净值曲线 (扣成本)", "left": "center", "textStyle": {"fontSize": 14}}, "tooltip": {"trigger": "axis"}, "xAxis": {"type": "category", "data": ["20250103", "20250110", "20250117", "20250124", "20250127", "20250207", "20250214", "20250221", "20250228", "20250307", "20250314", "20250321", "20250328", "20250403", "20250411", "20250418", "20250425", "20250430", "20250509", "20250516", "20250523", "20250530", "20250606", "20250613", "20250620"], "axisLabel": {"rotate": 45, "fontSize": 10}}, "yAxis": {"type": "value", "name": "净值"}, "series": [{"type": "line", "data": [0.9932, 0.9708, 0.9728, 0.937, 0.8765, 0.8516, 0.8105, 0.8343, 0.8107, 0.825, 0.8485, 0.886, 0.9118, 0.9353, 0.9395, 0.93, 0.8961, 0.8748, 0.8629, 0.8692, 0.8698, 0.8541, 0.8564, 0.8827, 0.8571], "symbol": "none", "lineStyle": {"color": "#e74c3c", "width": 2}, "areaStyle": {"opacity": 0.1}}], "dataZoom": [{"type": "inside"}, {"type": "slider"}]});</script>
+<h3 style="margin:15px 0 5px; font-size:16px;">分组收益 (单调性: score=0.7000, p=0.1881, 换手率=32.28%)</h3>
+<table>
+<thead><tr><th>组别</th><th>g1</th><th>g2</th><th>g3</th><th>g4</th><th>g5</th></tr></thead>
+<tbody>
+<tr><td>平均收益</td><td>0.002568</td><td>0.004699</td><td>0.008973</td><td>0.010876</td><td>0.007365</td></tr>
+<tr><td>期数</td><td>25</td><td>25</td><td>25</td><td>25</td><td>25</td></tr>
+</tbody>
+</table>
+
+</div>
+
+<div class="section"><h2>单因子回测 (Top-N 等权)</h2>
+<div id="bt_nav" class="chart" style="height:350px"></div>
+<script>var c=echarts.init(document.getElementById("bt_nav"));c.setOption({"title": {"text": "Top-10 组合 vs 基准净值", "left": "center", "textStyle": {"fontSize": 14}}, "tooltip": {"trigger": "axis"}, "legend": {"top": 30, "data": ["组合", "基准"]}, "xAxis": {"type": "category", "data": ["20250103", "20250110", "20250117", "20250124", "20250127", "20250207", "20250214", "20250221", "20250228", "20250307", "20250314", "20250321", "20250328", "20250403", "20250411", "20250418", "20250425", "20250430", "20250509", "20250516", "20250523", "20250530", "20250606", "20250613", "20250620"], "axisLabel": {"rotate": 45, "fontSize": 10}}, "yAxis": {"type": "value", "name": "净值"}, "series": [{"name": "组合", "type": "line", "data": [0.9816, 1.0039, 0.9916, 0.9997, 1.0033, 1.0057, 0.9947, 0.9948, 0.9901, 1.008, 1.0123, 1.0143, 0.9624, 0.9337, 0.9659, 0.9585, 0.9651, 0.9758, 0.9857, 0.9796, 0.99, 0.9981, 0.9883, 0.9885, 1.0002], "symbol": "none", "lineStyle": {"color": "#e74c3c", "width": 2}}, {"name": "基准", "type": "line", "data": [0.9866, 1.0296, 1.033, 1.0752, 1.1216, 1.1369, 1.15, 1.1376, 1.1615, 1.1899, 1.1832, 1.1621, 1.061, 1.0067, 1.0183, 1.038, 1.0653, 1.1074, 1.1189, 1.1138, 1.1253, 1.1562, 1.151, 1.1282, 1.1741], "symbol": "none", "lineStyle": {"color": "#95a5a6", "width": 1.5}}], "dataZoom": [{"type": "inside"}, {"type": "slider"}]});</script>
+<h3 style="margin:15px 0 5px; font-size:16px;">组合绩效</h3>
+<table>
+<thead><tr><th>指标</th><th>值</th></tr></thead>
+<tbody>
+<tr><td>总收益</td><td>0.02%</td></tr>
+<tr><td>年化收益</td><td>0.03%</td></tr>
+<tr><td>年化波动</td><td>12.38%</td></tr>
+<tr><td>夏普</td><td>0.0627</td></tr>
+<tr><td>Sortino</td><td>0.0717</td></tr>
+<tr><td>最大回撤</td><td>-7.95%</td></tr>
+<tr><td>卡玛</td><td>0.0040</td></tr>
+<tr><td>胜率</td><td>64.00%</td></tr>
+<tr><td>盈亏比</td><td>0.5764</td></tr>
+<tr><td>期数</td><td>25</td></tr>
+</tbody>
+</table>
+
+<h3 style="margin:15px 0 5px; font-size:16px;">分年度收益</h3>
+<table>
+<thead><tr><th>年份</th><th>期数</th><th>组合收益</th><th>基准收益</th><th>超额</th><th>夏普</th><th>胜率</th></tr></thead>
+<tbody>
+<tr><td>2025</td><td>25</td><td>0.02%</td><td>17.41%</td><td>-17.40%</td><td>0.0627</td><td>64.00%</td></tr>
+</tbody>
+</table>
+
+</div>
+
+<div class="section"><h2>防过拟合校验</h2>
+<div id="perm_dist" class="chart" style="height:350px"></div>
+<script>var c=echarts.init(document.getElementById("perm_dist"));c.setOption({"title": {"text": "置换检验分布", "left": "center", "textStyle": {"fontSize": 14}}, "tooltip": {"trigger": "axis"}, "xAxis": {"type": "value", "name": "置换 IC 均值"}, "yAxis": {"type": "value", "name": "频次"}, "series": [{"type": "histogram", "data": [-0.000226, 0.000447, -0.000243, -0.002077, -0.002754, -0.000639, 0.001645, -0.004623, 0.00138, 0.002052, 0.003324, 0.001577, 0.000537, -0.00285, -0.001727, 0.003899, -0.000625, -0.005551, -0.002271, -0.000992], "itemStyle": {"color": "#95a5a6", "opacity": 0.7}}], "graphic": [{"type": "line", "shape": {"x1": -0.0494358443527358, "y1": 0, "x2": -0.0494358443527358, "y2": 100}, "style": {"stroke": "#e74c3c", "lineWidth": 2}}]});</script>
+<h3 style="margin:15px 0 5px; font-size:16px;">样本内外对比</h3>
+<table>
+<thead><tr><th>指标</th><th>值</th></tr></thead>
+<tbody>
+<tr><td>训练期天数</td><td>70</td></tr>
+<tr><td>训练 IC 均值</td><td>-0.041472</td></tr>
+<tr><td>训练 ICIR</td><td>-0.1623</td></tr>
+<tr><td>测试期天数</td><td>42</td></tr>
+<tr><td>测试 IC 均值</td><td>-0.062709</td></tr>
+<tr><td>测试 ICIR</td><td>-0.3706</td></tr>
+<tr><td>ICIR 衰减</td><td>-128.40%</td></tr>
+<tr><td>方向一致</td><td>✅</td></tr>
+</tbody>
+</table>
+
+<h3 style="margin:15px 0 5px; font-size:16px;">置换检验</h3>
+<table>
+<thead><tr><th>指标</th><th>值</th></tr></thead>
+<tbody>
+<tr><td>实际 IC 均值</td><td>-0.049436</td></tr>
+<tr><td>置换 IC 均值</td><td>-0.000486</td></tr>
+<tr><td>置换 IC 标准差</td><td>0.002404</td></tr>
+<tr><td>p 值</td><td>0.0000</td></tr>
+<tr><td>95% CI</td><td>[-0.005110, 0.003626]</td></tr>
+<tr><td>显著 (p<0.05)</td><td>✅ 是</td></tr>
+<tr><td>置换次数</td><td>20</td></tr>
+</tbody>
+</table>
+
+<h3 style="margin:15px 0 5px; font-size:16px;">子周期稳定性</h3>
+<table>
+<thead><tr><th>指标</th><th>值</th></tr></thead>
+<tbody>
+<tr><td>年数</td><td>1</td></tr>
+<tr><td>整体 IC 均值</td><td>-0.049436</td></tr>
+<tr><td>方向一致率</td><td>100.00%</td></tr>
+<tr><td>通过 (≥70%)</td><td>✅</td></tr>
+</tbody>
+</table>
+
+<h3 style="margin:15px 0 5px; font-size:16px;">IC 自相关</h3>
+<table>
+<thead><tr><th>指标</th><th>值</th></tr></thead>
+<tbody>
+<tr><td>AC(1)</td><td>0.7769</td></tr>
+<tr><td>AC(5)</td><td>0.0011</td></tr>
+<tr><td>AC(10)</td><td>0.2670</td></tr>
+<tr><td>有持续性 (|AC1|>0.1)</td><td>✅</td></tr>
+</tbody>
+</table>
+
+</div>
+
+</div>
+</body>
+</html>

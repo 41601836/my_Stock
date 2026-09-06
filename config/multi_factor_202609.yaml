@@ -1,0 +1,53 @@
+# 202609 多因子分析模型配置
+# ============================================================
+# 因子池：5 个独立因子（来自层次聚类，每簇选代表因子）
+# 合成方法：rank_average（排名平均，先排名归一化再等权求和）
+#
+# 零侵入原则：本配置仅被 multi_factor_202609 模块读取，
+# 不影响经典扫描器、EVO 层、FactorLib 等其他模块。
+
+model_name: "202609多因子分析"
+model_version: "1.0.0"
+method: "rank_average"          # 合成方法：rank_average / equal_weight / icir_weighted
+top_n: 20                       # 返回 Top-N 只股票
+min_valid_factors: 3            # 最少有效因子数（缺失超过则跳过）
+
+# 5 个独立因子（按聚类顺序）
+factors:
+  - name: "vol_ratio"
+    category: "聪明钱"
+    cluster: 1
+    description: "量价偏离度（S级，ICIR=-0.537）"
+
+  - name: "turnover_rate"
+    category: "流动性"
+    cluster: 2
+    description: "换手率（A级，ICIR=-0.325）"
+
+  - name: "quality_score"
+    category: "质量"
+    cluster: 3
+    description: "质量综合得分（D级，ICIR=+0.170）"
+
+  - name: "chip_concentration"
+    category: "筹码"
+    cluster: 4
+    description: "筹码集中度（C级，ICIR=-0.243）"
+
+  - name: "surprise_earnings_gap"
+    category: "预期差"
+    cluster: 5
+    description: "业绩超预期缺口（A+级，ICIR=-0.678）"
+
+# 数据源表（保持与 factor_lib 一致，只读）
+data_source:
+  factor_table: "factor_values"
+  price_table: "daily_prices"
+  stock_list_table: "stock_list"
+  db_path: "db/stock_data.db"
+
+# 过滤条件
+filters:
+  exclude_st: true               # 排除 ST 股
+  exclude_delist: true           # 排除退市股
+  min_trade_days: 60             # 最少上市交易日

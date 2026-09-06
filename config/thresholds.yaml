@@ -161,17 +161,20 @@ position_pick_funnel:
       north_net_inflow_ratio: -0.18
       return_5d:             -0.54
       turnover_rate_20d:     -0.28
-    # build_score 合成权重（左/右两套，与原硬编码 1:1 对齐，总和=1.0）
-    #   左侧：潜伏风格 → 因子分 45% + 获利盘分布 25% + 净流入 20% + 低涨幅优先 10%
-    #   右侧：突破风格 → 因子分 40% + 获利盘排名 25% + 净流入 25% + 高涨幅优先 10%
+    # build_score 合成权重（左/右两套；2026-09-03 P1-2 起 winner_rate 打分权重置零）
+    #   证据：recommendation_tracker 1510 条已结算样本五分位，winner_rate 最低组 alpha_5d +1.23%
+    #         vs 最高组 -1.62%（高获利盘=短期顶部，反转市反向）；三口径 IC 同向（profit_ratio_estimate 负 IC）。
+    #   处置：打分权重 0（停止为反向信号付费；不翻负=不主动押注，保守）；硬过滤区间 lo/hi/right_lo 保留作风控边界。
+    #   左侧：潜伏风格 → 因子分 45% + 净流入 20% + 低涨幅优先 10%
+    #   右侧：突破风格 → 因子分 40% + 净流入 25% + 高涨幅优先 10%
     build_score_left:
       factor_score_norm:    0.45
-      winner_rate_score:    0.25
+      winner_rate_score:    0.00   # 原 0.25（P1-2 置零，证据见上）
       inflow_norm:          0.20
       pct_chg_rank_inv:     0.10   # 1 - pct_chg.rank（低涨幅优先）
     build_score_right:
       factor_score_norm:    0.40
-      winner_rate_rank:     0.25
+      winner_rate_rank:     0.00   # 原 0.25（P1-2 置零，证据见上）
       inflow_norm:          0.25
       pct_chg_rank:         0.10   # pct_chg.rank（高涨幅优先）
     # 画像分超阈值额外加分（防超优质股被误排）
@@ -213,7 +216,7 @@ scanner:
     restricted_ST:         true   # 排除 ST / *ST
   scoring_weights:
     factor_rank:           0.28   # 因子排名权重
-    winner_rate_rank:      0.23   # 获利盘排名权重
+    winner_rate_rank:      0.00   # 原 0.23：P1-2 置零（tracker 五分位证据 W1 +1.23% vs W5 -1.62%，高获利盘反向；不翻负保守处理，硬过滤 25~85 区间保留）
     chip_peak_rank:        0.19   # 筹码峰集中度排名权重
     inflow_rank:           0.23   # 净流入排名权重
     pct_chg_inv_rank:      0.07   # 低涨幅优先（逆排名）权重
@@ -288,6 +291,21 @@ hot_money_tracker:
   theme_stocks_drill:
     default_limit:        10      # 默认返回游资个股数（原 limit=10）
     sort_by: "net_mf_amount"      # 排序字段：net_mf_amount(主力净流入) / turnover_rate(换手率) / pct_chg(当日涨幅)
+
+# ======================================================================
+# 6.5 tracker factor_score 分组单调性监控（P2-10：打分失效早发现）
+# ======================================================================
+# 口径：当日内 factor_score pct rank 五分位（消除跨日分数漂移）× 前瞻 alpha 均值
+#       → Spearman(组序, alpha)；主判定窗口 alpha_5d，近 N 个推荐日窗口用于早期预警。
+# 证据：20260903 探库——全样本(33日) rho_5d=+0.600 尚可，但近 10 推荐日 rho_5d=-0.900
+#       （Q5 高分组 alpha +0.39% < Q1 低分组 +1.02%，打分近期反向）。
+# 回滚：本节为只读监控输出（/api/tracker/attribution 追加 score_monotonicity 键），
+#       不影响任何打分/推荐链路；置 enabled:false 即可关闭。
+tracker_monotonicity:
+  enabled:      true    # 总开关
+  recent_days:  10      # 预警窗口：最近 N 个推荐日
+  min_bucket_n: 30      # 单组最少样本，不足判 insufficient（防小样本误报）
+  ok_rho:       0.5     # 主判定(alpha_5d)：≥0.5 ok；0~0.5 weak；<0 reversed（告警）
 
 # ======================================================================
 # 7. 数据完整性闸门（回测前置检查，阻断脏数据进入回测引擎）

@@ -1,7 +1,7 @@
 backtest:
   full_weeks: 208
   quick_weeks: 104
-  top_n_stocks: 16
+  top_n_stocks: 10
   transaction_cost: 0.0015
 factors:
   base_pool:
@@ -13,9 +13,10 @@ factors:
   - skewness_20d
   - pb
   custom_new_factors:
+  - excess_return_20d
+  - max_drawdown_20d
   - north_net_inflow_ratio
-  - return_5d
-  - turnover_rate_20d
+  - vol_ratio
   experimental_pool:
   - return_10d
   - return_120d
@@ -46,3 +47,13 @@ validation:
   decay_invalid_threshold: 0.5
   decay_warning_threshold: 0.3
   recent_weeks_lookback: 52
+# P1-3 巡航跨 top_n 稳健性闸门（2026-09-03 复盘新增）
+# 背景：20260903 巡航轨迹 66 格点 / 22 组合中，旧报告最优 combo10 仅 top_n=10/20 超额卡玛为正
+#   （+0.1977 / +0.0063），top_n=30 为 -0.0495；全样本 0 个组合三档全正 —— 单点最优是容量敏感的脆弱结果。
+# 规则：同一因子组合在三档 top_n(10/20/30) 的超额卡玛「最小值」需 ≥ min_excess_calmar，
+#   才可进入全局最优评选 / 达标部署 / 续跑历史最优种子。
+# 回滚：enabled 改 false 即完全恢复旧行为（单点最优即可部署）。
+cruise:
+  robustness_gate:
+    enabled: true
+    min_excess_calmar: 0.0

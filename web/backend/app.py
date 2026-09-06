@@ -28,6 +28,7 @@ import threading
 import uuid
 import time
 import glob
+import signal
 import yaml
 import shutil
 
@@ -54,6 +55,7 @@ from services import (
     get_timing_alerts,   # 建仓时机预警评分
     get_portrait_analysis,  # T+1 画像分析路由层
     get_portrait_position_pick,  # T+1 画像三层漏斗建仓决策
+    get_reco_history,  # 今日策略推荐统计层（recommendation_tracker / 胜率猎手优化器）
     clean_nan_inf,
     PROJECT_ROOT
 )
@@ -288,6 +290,161 @@ def api_run_backtest():
     t.start()
     return {"task_id": task_id, "status": "PENDING", "message": "回测仿真已启动，更新数据截止日期，预计耗时 1-2 分钟..."}
 
+
+# ──────────── Agent 自主进化巡航：托管启动/停止 (P1) ────────────
+# 巡航是长驻进程，不走 task_registry；以 logs/cruise.pid + 心跳文件判定活性。
+CRUISE_PID_FILE = os.path.join(PROJECT_ROOT, "logs", "cruise.pid")
+_CRUISE_PROC = {"proc": None}  # 保留本后端亲生的 Popen 引用，用于 poll() 收割僵尸
+
+
+def _cruise_alive_pid():
+    """返回存活的巡航 PID (僵尸态视为死亡)，未运行返回 None"""
+    # 1) 优先收割本后端亲生的已退出子进程，防止僵尸占用 PID 被误判存活
+    proc = _CRUISE_PROC["proc"]
+    if proc is not None:
+        if proc.poll() is not None:
+            _CRUISE_PROC["proc"] = None
+        else:
+            return proc.pid
+    # 2) PID 文件路径 (覆盖脚本启动 / 后端重启后失引用的场景)
+    try:
+        with open(CRUISE_PID_FILE, "r", encoding="utf-8") as f:
+            pid = int(f.read().strip())
+    except (OSError, ValueError):
+        return None
+    try:
+        os.kill(pid, 0)  # 探活：不发送信号
+    except OSError:
+        return None
+    # 3) 僵尸进程 kill(pid,0) 依然成功，需检查进程状态 (macOS 无 /proc，用 ps)
+    try:
+        stat = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)],
+                              capture_output=True, text=True, timeout=5).stdout.strip()
+        if stat.startswith("Z"):
+            return None
+    except Exception:
+        pass
+    return pid
+
+
+@app.post("/api/agent/cruise/start")
+def api_cruise_start():
+    """
+    以守护会话启动 Agent 自动巡航 (--auto)：start_new_session 完全脱离后端进程组，
+    后端重启不影响巡航；PID 写入 logs/cruise.pid 防重复启动。
+    """
+    alive = _cruise_alive_pid()
+    if alive:
+        return {"status": "busy", "message": f"⚠️ 巡航已在运行中 (PID {alive})，请勿重复启动"}
+
+    # 兜底：心跳新鲜但无 PID 记录 → 可能是终端手工启动的巡航，两个进程并行写 config.yaml 是灾难
+    hb_path = os.path.join(PROJECT_ROOT, "agent", "cruise_heartbeat")
+    if os.path.exists(hb_path) and time.time() - os.path.getmtime(hb_path) < 300:
+        return {"status": "busy",
+                "message": "⚠️ 检测到活跃巡航心跳但无 PID 记录（可能为终端手工启动），请先终止该进程再启动"}
+
+    log_path = os.path.join(PROJECT_ROOT, "logs", f"cruise_{time.strftime('%Y%m%d_%H%M%S')}.log")
+    cmd = [sys.executable, "-u", os.path.join(PROJECT_ROOT, "agent", "run_agent.py"), "--auto"]
+    try:
+        with open(log_path, "ab") as log_f:
+            proc = subprocess.Popen(
+                cmd, cwd=PROJECT_ROOT, stdout=log_f, stderr=subprocess.STDOUT,
+                start_new_session=True
+            )
+        _CRUISE_PROC["proc"] = proc
+        with open(CRUISE_PID_FILE, "w", encoding="utf-8") as f:
+            f.write(str(proc.pid))
+        return {"status": "PENDING", "pid": proc.pid, "log": log_path,
+                "message": f"🚀 巡航已启动 (PID {proc.pid})，日志: {os.path.basename(log_path)}"}
+    except Exception as e:
+        return {"status": "error", "message": f"❌ 巡航启动失败: {e}"}
+
+
+@app.post("/api/agent/cruise/stop")
+def api_cruise_stop():
+    """
+    优雅停止巡航：发送 SIGTERM，run_agent 信号处理器会恢复 config.yaml、导出报告并清除心跳。
+    """
+    alive = _cruise_alive_pid()
+    if not alive:
+        return {"status": "idle", "message": "ℹ️ 巡航当前未在运行"}
+    try:
+        os.kill(alive, signal.SIGTERM)
+        return {"status": "STOPPING", "pid": alive,
+                "message": f"🛑 已向巡航进程 (PID {alive}) 发送 SIGTERM，正在安全退出..."}
+    except OSError as e:
+        return {"status": "error", "message": f"❌ 停止失败: {e}"}
+
+
+@app.post("/api/agent/cruise/reset")
+def api_cruise_reset():
+    """
+    一键重置巡航状态：
+      1. 运行中 → SIGTERM 优雅停止并等待退出（信号处理可能被长回测调用延迟，最多等 30 秒）
+      2. 归档 agent/auto_cruise_report_*.json 与旧版 agent/auto_run.log → agent/archive/
+      3. 清理 cruise_heartbeat / cruise.pid 残留
+      4. 若存在 config.yaml.bak（硬死亡遗留）→ 恢复 config.yaml
+    不触碰 models/regime_weights_proposed.pkl（待人工批准的权重）。
+    """
+    # 兜底：心跳新鲜但无 PID 记录 → 终端手工启动的巡航，无法代管停止，拒绝半重置
+    hb_path = os.path.join(PROJECT_ROOT, "agent", "cruise_heartbeat")
+    alive = _cruise_alive_pid()
+    if not alive and os.path.exists(hb_path) and time.time() - os.path.getmtime(hb_path) < 300:
+        return {"status": "busy",
+                "message": "⚠️ 检测到活跃巡航心跳但无 PID 记录（可能为终端手工启动），请先手工终止该进程再重置"}
+
+    # 1) 优雅停止并等待退出
+    stopped_pid = None
+    if alive:
+        stopped_pid = alive
+        try:
+            os.kill(alive, signal.SIGTERM)
+        except OSError:
+            pass
+        deadline = time.time() + 30
+        while time.time() < deadline and _cruise_alive_pid() is not None:
+            time.sleep(1.0)
+        if _cruise_alive_pid() is not None:
+            return {"status": "STOPPING", "pid": stopped_pid,
+                    "message": f"🛑 已发送停止信号，但进程 (PID {stopped_pid}) 仍在退出中（长回测计算无法立即打断）。请约 1 分钟后重试重置。"}
+
+    # 2) 归档寻优报告与旧版日志（续跑断点随之清空，下次巡航全新开始）
+    archived = []
+    archive_dir = os.path.join(PROJECT_ROOT, "agent", "archive")
+    os.makedirs(archive_dir, exist_ok=True)
+    for path in glob.glob(os.path.join(PROJECT_ROOT, "agent", "auto_cruise_report_*.json")):
+        shutil.move(path, os.path.join(archive_dir, os.path.basename(path)))
+        archived.append(os.path.basename(path))
+    old_log = os.path.join(PROJECT_ROOT, "agent", "auto_run.log")
+    if os.path.exists(old_log) and os.path.getsize(old_log) > 0:
+        shutil.move(old_log, os.path.join(archive_dir, f"auto_run_{time.strftime('%Y%m%d_%H%M%S')}.log"))
+        archived.append("auto_run.log")
+
+    # 3) 清理心跳与 PID 残留
+    for leftover in (hb_path, CRUISE_PID_FILE):
+        try:
+            os.remove(leftover)
+        except OSError:
+            pass
+
+    # 4) 恢复硬死亡遗留的 config 备份
+    config_restored = False
+    backup_path = os.path.join(PROJECT_ROOT, "agent", "config.yaml.bak")
+    if os.path.exists(backup_path):
+        shutil.copy(backup_path, os.path.join(PROJECT_ROOT, "agent", "config.yaml"))
+        os.remove(backup_path)
+        config_restored = True
+
+    parts = ["🧹 重置完成"]
+    if stopped_pid:
+        parts.append(f"已停止巡航 (PID {stopped_pid})")
+    if archived:
+        parts.append(f"归档 {len(archived)} 个文件至 agent/archive/")
+    if config_restored:
+        parts.append("config.yaml 已从 .bak 恢复")
+    return {"status": "RESET", "archived": archived, "config_restored": config_restored,
+            "message": "；".join(parts) + "。下次巡航将全新开始。"}
+
 @app.post("/api/hunter/run")
 async def api_hunter_run(request: Request):
     """
@@ -494,6 +651,24 @@ def api_scan_history(
     )
 
 
+@app.get("/api/reco-history")
+def api_reco_history(days: int = 30, min_appear: int = 1):
+    """
+    今日策略推荐统计（策略：胜率猎手优化器）。
+    数据源 = recommendation_tracker（/api/portfolio 推荐名单自动落库），含前瞻收益回填。
+
+    返回结构与 /api/scan-history 对齐：
+    - summary: 上榜频率排行（出现次数/均排名/均因子分/5日超额胜率/均5日超额）
+    - streak:  当前连续上榜天数 >= 2 的股票排行
+    - daily:   按日期分组的每日推荐快照
+    - meta:    统计元信息（含 strategy 标签）
+    """
+    return get_reco_history(
+        days=max(1, min(days, 365)),
+        min_appear=min_appear
+    )
+
+
 @app.get("/api/scan-history/stock/{ts_code}")
 def api_scan_history_stock(ts_code: str, days: int = 90):
     """
@@ -636,6 +811,38 @@ except Exception as _evo_exc:
         f"⚠️ [Evo] 进化层路由挂载失败（经典系统照常运行）：{_evo_exc}"
     )
 
+# ═══════════════════════════════════════════════════════════
+# 因子库路由（平行层，零侵入）
+# ═══════════════════════════════════════════════════════════
+try:
+    from routers import factor_lib_router
+    app.include_router(factor_lib_router)
+    import logging as _fl_logging
+    _fl_logging.getLogger(__name__).info(
+        "✅ [FactorLib] 因子库路由已挂载：/api/factor-lib/*（平行层，经典路由不受影响）"
+    )
+except Exception as _fl_exc:
+    import logging as _fl_logging2
+    _fl_logging2.getLogger(__name__).warning(
+        f"⚠️ [FactorLib] 因子库路由挂载失败（经典系统照常运行）：{_fl_exc}"
+    )
+
+
+# 202609 多因子分析路由（平行层，零侵入）
+# ═══════════════════════════════════════════════════════════
+try:
+    from routers import mf202609_router
+    app.include_router(mf202609_router)
+    import logging as _mf_logging
+    _mf_logging.getLogger(__name__).info(
+        "✅ [MF202609] 202609多因子分析路由已挂载：/api/mf202609/*（平行层，经典路由不受影响）"
+    )
+except Exception as _mf_exc:
+    import logging as _mf_logging2
+    _mf_logging2.getLogger(__name__).warning(
+        f"⚠️ [MF202609] 202609多因子分析路由挂载失败（经典系统照常运行）：{_mf_exc}"
+    )
+
 
 # ══════════════════════════════════════════════════════════════════
 # 生产环境：托管前端静态文件（dist）—— 必须放在所有 API 路由之后
@@ -656,9 +863,12 @@ if os.path.isdir(_FRONTEND_DIST) and os.path.exists(os.path.join(_FRONTEND_DIST,
     # SPA fallback：所有非 /api 路径返回 index.html，交给 React Router 处理
     @app.get("/{full_path:path}")
     async def _spa_fallback(full_path: str):
-        # 排除 API 路径（已被具体路由匹配）
+        # API 路径若落到这里（路由未匹配），返回 JSON 404 而不是 HTML
         if full_path.startswith("api"):
-            raise HTTPException(status_code=404, detail="Not Found")
+            return SafeJSONResponse(
+                status_code=404,
+                content={"success": False, "error": "API_NOT_FOUND", "detail": f"路径 /{full_path} 不存在"}
+            )
         # 请求的文件若存在于 dist 中，直接返回该文件
         candidate = os.path.join(_FRONTEND_DIST, full_path)
         if full_path and os.path.isfile(candidate):

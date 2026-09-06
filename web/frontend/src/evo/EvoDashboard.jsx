@@ -3,8 +3,9 @@
  *  6 个卡片：模块状态、经典/EVO 推荐概览、因子数量、拥挤度概览、衰减警告、快速导航
  */
 import React, { useEffect, useState } from 'react'
-import { Zap, GitCompare, Shield, Brain, Target, Activity, ChevronRight } from 'lucide-react'
+import { Zap, GitCompare, Shield, Brain, Target, Activity, ChevronRight, Scale, Rocket } from 'lucide-react'
 import * as EvoApi from './EvoApi'
+import { emStockUrl } from './EvoApi'
 
 function Card({ title, icon: Icon, iconColor, children, accent, action }) {
   return (
@@ -40,12 +41,19 @@ function ModuleChip({ key: k, enabled, meta }) {
 export default function EvoDashboard({ evoStatus }) {
   const [stats, setStats] = useState(null)
   const [factors, setFactors] = useState(null)
+  const [combo, setCombo] = useState(null)
+  const [surp, setSurp] = useState(null)
+  const [pick, setPick] = useState(null)
 
   useEffect(() => {
-    Promise.all([EvoApi.status(), EvoApi.factorsList()]).then(([s, f]) => {
-      if (!s.error) setStats(s)
-      if (!f.error) setFactors(f)
-    })
+    Promise.all([EvoApi.status(), EvoApi.factorsList(), EvoApi.portfolio(5), EvoApi.surpriseTop(5), EvoApi.portraitPick(20, 'left')])
+      .then(([s, f, p, sp, pk]) => {
+        if (!s.error) setStats(s)
+        if (!f.error) setFactors(f)
+        if (!p.error) setCombo(p)
+        if (!sp.error) setSurp(sp)
+        if (!pk.error) setPick(pk)
+      })
   }, [])
 
   const modules = (stats || evoStatus || {}).modules || {}
@@ -146,6 +154,96 @@ export default function EvoDashboard({ evoStatus }) {
           <StatusBlock name="lambdarank" modules={modules} desc={
             <>LightGBM LambdaRank 优化 Top-K 排序（测试段 NDCG@10 相对 IC 基线 +98.7%）。每只股票输出 18 项 SHAP 贡献。当前 β=0.1 灰度接入组合，可一行配置回滚。</>
           } />
+        </Card>
+
+        {/* 7. EVO 今日组合（完整 mixer） */}
+        <Card
+          title="EVO 今日组合 Top5（完整 mixer）"
+          icon={Scale}
+          iconColor="bg-amber-500/15 text-amber-300 border border-amber-500/30"
+          action={<span className="text-[10px] font-mono text-slate-500">{combo?.date || ''}</span>}
+        >
+          {(combo?.stocks || []).length ? (
+            <div className="flex flex-col gap-1">
+              {combo.stocks.map(s => (
+                <div key={s.ts_code} className="flex items-center gap-2 text-xs bg-slate-900/30 border border-slate-800 rounded-lg px-2 py-1">
+                  <a href={emStockUrl(s.ts_code)} target="_blank" rel="noopener noreferrer"
+                    className="font-mono text-slate-200 hover:text-sky-300">{s.ts_code}</a>
+                  <span className="text-slate-400 truncate">{s.name || '—'}</span>
+                  <span className="ml-auto font-mono text-amber-300">{typeof s.evo_score === 'number' ? s.evo_score.toFixed(3) : '—'}</span>
+                  {s.grade && <span className="px-1.5 py-0.5 rounded text-[10px] border bg-rose-500/10 text-rose-300 border-rose-500/30">{s.grade}</span>}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-xs text-slate-600 py-3 text-center">组合计算暂不可用</div>
+          )}
+        </Card>
+
+        {/* 8. 惊喜度 Top（预期差三因子） */}
+        <Card
+          title="惊喜度 Top5（预期差）"
+          icon={Rocket}
+          iconColor="bg-fuchsia-500/15 text-fuchsia-300 border border-fuchsia-500/30"
+          action={<span className="text-[10px] font-mono text-slate-500">{surp?.trade_date || ''}</span>}
+        >
+          {(surp?.stocks || []).length ? (
+            <div className="flex flex-col gap-1">
+              {surp.stocks.map(s => (
+                <div key={s.ts_code} className="flex items-center gap-1.5 text-xs bg-slate-900/30 border border-slate-800 rounded-lg px-2 py-1 flex-wrap">
+                  <a href={emStockUrl(s.ts_code)} target="_blank" rel="noopener noreferrer"
+                    className="font-mono text-slate-200 hover:text-sky-300">{s.ts_code}</a>
+                  <span className="ml-auto flex gap-1">
+                    {['surprise_price_vote', 'surprise_earnings_gap', 'surprise_roe_qoq'].map(k => {
+                      const v = s[k]
+                      return (
+                        <span key={k} title={k}
+                          className={`px-1.5 py-0.5 rounded text-[10px] font-mono border ${
+                            typeof v === 'number' && v > 0
+                              ? 'bg-fuchsia-500/10 text-fuchsia-300 border-fuchsia-500/30'
+                              : 'bg-slate-800/40 text-slate-600 border-slate-700/40'}`}>
+                          {typeof v === 'number' ? v.toFixed(2) : '—'}
+                        </span>
+                      )
+                    })}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-xs text-slate-600 py-3 text-center">暂无惊喜度数据</div>
+          )}
+        </Card>
+        {/* 9. 画像建仓 × EVO 调整分（Graham ±分） */}
+        <Card
+          title="画像建仓 × EVO 调整分"
+          icon={Target}
+          iconColor="bg-sky-500/15 text-sky-300 border border-sky-500/30"
+          action={<span className="text-[10px] font-mono text-slate-500">画像分 + Graham ±</span>}
+        >
+          {(() => {
+            const rows = (pick?.classic_overlay?.picks || [])
+              .filter(p => p?.evo?.evo_adjusted_score != null)
+              .sort((a, b) => b.evo.evo_adjusted_score - a.evo.evo_adjusted_score)
+              .slice(0, 5)
+            return rows.length ? (
+              <div className="flex flex-col gap-1">
+                {rows.map(p => (
+                  <div key={p.ts_code} className="flex items-center gap-2 text-xs bg-slate-900/30 border border-slate-800 rounded-lg px-2 py-1">
+                    <a href={emStockUrl(p.ts_code)} target="_blank" rel="noopener noreferrer"
+                      className="font-mono text-slate-200 hover:text-sky-300">{p.ts_code}</a>
+                    <span className="text-slate-400 truncate">{p.name || ''}</span>
+                    <span className="ml-auto font-mono text-slate-500" title="原始画像分">{typeof p.portrait_score === 'number' ? p.portrait_score.toFixed(1) : '—'}</span>
+                    <span className="text-slate-600">→</span>
+                    <span className="font-mono text-sky-300" title="画像分 + Graham 加减分">{p.evo.evo_adjusted_score.toFixed(1)}</span>
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-mono border bg-rose-500/10 text-rose-300 border-rose-500/30" title="Graham 防御项">{p.evo.graham_score}/7</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-xs text-slate-600 py-3 text-center">画像建仓数据暂不可用</div>
+            )
+          })()}
         </Card>
       </div>
 

@@ -20,6 +20,8 @@ import * as EvoApi from './EvoApi'
 import EvoCompare  from './EvoCompare'
 import EvoGraham   from './EvoGraham'
 import EvoDashboard from './EvoDashboard'
+import EvoFactors  from './EvoFactors'
+import EvoML       from './EvoML'
 
 const evoNavItems = [
   { id: '/evo/dashboard', label: '进化仪表盘', Icon: Zap },
@@ -133,22 +135,8 @@ export default function EvoLayout() {
             <Route path="/" element={<Navigate to="/evo/dashboard" replace />} />
             <Route path="/dashboard" element={<EvoDashboard evoStatus={evoStatus} />} />
             <Route path="/compare"   element={<EvoCompare />} />
-            <Route path="/factors"   element={
-              <div className="rounded-xl bg-[#111827] border border-[#1F2937] p-6">
-                <h3 className="text-sm font-semibold text-slate-200">🔀 EVO 因子监控</h3>
-                <p className="mt-2 text-xs text-slate-500">
-                  阶段 1 起展示：IC 趋势 + 拥挤度分布 + 衰减预警三图合一。当前骨架已就绪，数据 pipeline 运行后自动填充。
-                </p>
-              </div>
-            } />
-            <Route path="/ml" element={
-              <div className="rounded-xl bg-[#111827] border border-[#1F2937] p-6">
-                <h3 className="text-sm font-semibold text-slate-200">🧠 LambdaRank 排序学习</h3>
-                <p className="mt-2 text-xs text-slate-500">
-                  LightGBM LambdaRank 排序（测试段 NDCG@10 相对 IC 基线 +98.7%）。每日 21:30 管线自动推理并落库 SHAP。当前 β=0.1 灰度接入组合，详情见进化仪表盘。
-                </p>
-              </div>
-            } />
+            <Route path="/factors"   element={<EvoFactors />} />
+            <Route path="/ml"        element={<EvoML />} />
             <Route path="/graham"    element={<EvoGraham />} />
           </Routes>
         </div>

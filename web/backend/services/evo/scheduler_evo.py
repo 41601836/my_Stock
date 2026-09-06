@@ -27,44 +27,67 @@ from apscheduler.triggers.cron import CronTrigger
 from services.evo._common import PROJECT_ROOT, EvoConfig
 
 logger = logging.getLogger("services.evo.scheduler_evo")
+logger.setLevel(logging.INFO)   # 独立脚本运行时 root logger 默认 WARNING，不显式 setLevel 则 info 全被过滤
+
+# EVO 独立文件日志（硬约束：logs/evo/ 目录，与经典层 logs 隔离）
+_EVO_LOG_DIR = os.path.join(PROJECT_ROOT, "logs", "evo")
+try:
+    os.makedirs(_EVO_LOG_DIR, exist_ok=True)
+    _fh = logging.FileHandler(os.path.join(_EVO_LOG_DIR, "scheduler.log"), encoding="utf-8")
+    _fh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+    logger.addHandler(_fh)
+except Exception:
+    pass
 
 # 单飞锁 + 运行状态（供 /api/evo/scheduler/status 查询）
 _lock = threading.Lock()
 _state: Dict[str, Any] = {
-    "status": "idle",          # idle / running / ok / error / skipped
+    "status": "idle",          # idle / running / ok / partial / error / skipped / skipped_running
     "started_at": None,
     "finished_at": None,
     "exit_code": None,
     "duration_sec": None,
     "output_tail": "",
+    "steps": [],               # 分步结果：[{key,name,required,exit_code,status,duration_sec,tail}]
 }
 
 EVO_JOBS: List[Dict[str, Any]] = []   # 注册的 job 描述（status 接口用）
 _scheduler: Optional[BackgroundScheduler] = None
 
-# 子进程链：因子计算 → 动态权重 → 拥挤度/衰减监控（&& 串联，前者成功才跑后者）
-# 第四步 ML 推理 / 第五步 文本采集+打分：enabled 时追加，"; ||" 隔离 —— 失败不拖垮前面步骤
-EVO_TIMEOUT_SEC = 1800                # 因子 ~4min + 权重/监控/推理 ~2min + 文本 ~4min，余量充足
+# 分步子进程：因子计算 → 动态权重 → 拥挤度/衰减监控（核心，失败即终止）
+# ML 推理 / 文本采集+打分（可选，enabled 时追加；失败隔离但状态显式上报为 partial）
+EVO_TIMEOUT_SEC = 1800                # 单步超时；因子 ~4min，余量充足
+
+
+def _pipeline_steps() -> List[Dict[str, Any]]:
+    """返回当日应执行的步骤清单（每次调用实时读 evo.yaml，热加载生效）。"""
+    py = sys.executable  # 与后端进程同一解释器（miniconda 3.13，apscheduler/fastapi 已验证）
+    steps: List[Dict[str, Any]] = [
+        {"key": "feature_evo", "name": "EVO因子计算", "required": True,
+         "cmd": f"PYTHONPATH=. {py} src/feature_engineering_evo.py"},
+        {"key": "dynamic_weights", "name": "动态权重", "required": True,
+         "cmd": f"PYTHONPATH=. {py} src/evo_dynamic_weights.py"},
+        {"key": "monitors", "name": "拥挤度/衰减监控", "required": True,
+         "cmd": f"PYTHONPATH=. {py} src/evo_monitors.py"},
+    ]
+    if EvoConfig.get("lambdarank.enabled", False):
+        steps.append({"key": "ml_predict", "name": "ML推理(LambdaRank)", "required": False,
+                      "cmd": f"PYTHONPATH=. {py} src/evo_ml_rank.py --predict"})
+    if EvoConfig.get("text_factors.enabled", False):
+        steps.append({"key": "text_daily", "name": "文本采集打分", "required": False,
+                      "cmd": f"PYTHONPATH=. {py} src/evo_text_pipeline.py --daily"})
+    return steps
 
 
 def _pipeline_cmd() -> str:
-    py = sys.executable  # 与后端进程同一解释器（miniconda 3.13，apscheduler/fastapi 已验证）
-    cmd = (
-        f"PYTHONPATH=. {py} src/feature_engineering_evo.py && "
-        f"PYTHONPATH=. {py} src/evo_dynamic_weights.py && "
-        f"PYTHONPATH=. {py} src/evo_monitors.py"
+    """展示用命令串（核心 && 串联，可选步骤 ; 隔离），与实际分步执行语义一致。"""
+    steps = _pipeline_steps()
+    core = " && ".join(s["cmd"] for s in steps if s["required"])
+    opt = "".join(
+        f" ; ({s['cmd']} || echo '[{s['key']}] failed (non-blocking)')"
+        for s in steps if not s["required"]
     )
-    if EvoConfig.get("lambdarank.enabled", False):
-        cmd += (
-            f" ; (PYTHONPATH=. {py} src/evo_ml_rank.py --predict "
-            f"|| echo '[ML] predict failed (non-blocking)')"
-        )
-    if EvoConfig.get("text_factors.enabled", False):
-        cmd += (
-            f" ; (PYTHONPATH=. {py} src/evo_text_pipeline.py --daily "
-            f"|| echo '[Text] daily failed (non-blocking)')"
-        )
-    return cmd
+    return core + opt
 
 
 def _evo_pipeline() -> None:
@@ -87,43 +110,79 @@ def _evo_pipeline() -> None:
         return
     try:
         t0 = time.time()
+        steps = _pipeline_steps()
         _state.update(
             status="running",
             started_at=time.strftime("%Y-%m-%d %H:%M:%S"),
-            finished_at=None, exit_code=None,
+            finished_at=None, exit_code=None, steps=[],
         )
-        logger.info(f"[EvoScheduler] 开始每日 EVO 管线: {_pipeline_cmd()}")
-        try:
-            proc = subprocess.run(
-                ["bash", "-c", _pipeline_cmd()],
-                cwd=PROJECT_ROOT, capture_output=True, text=True,
-                timeout=EVO_TIMEOUT_SEC,
-            )
-            tail = ((proc.stdout or "") + (proc.stderr or ""))[-1500:]
-            _state.update(
-                status="ok" if proc.returncode == 0 else "error",
-                exit_code=proc.returncode,
-                output_tail=tail,
-                duration_sec=round(time.time() - t0, 1),
-                finished_at=time.strftime("%H:%M:%S"),
-            )
-            logger.info(f"[EvoScheduler] 管线结束 exit={proc.returncode} "
-                        f"耗时 {time.time() - t0:.0f}s")
-        except subprocess.TimeoutExpired:
-            _state.update(
-                status="error", exit_code=-9,
-                output_tail=f"任务超时（>{EVO_TIMEOUT_SEC}s）已终止",
-                duration_sec=round(time.time() - t0, 1),
-                finished_at=time.strftime("%H:%M:%S"),
-            )
-            logger.error("[EvoScheduler] 管线超时终止")
-        except Exception as e:
-            _state.update(
-                status="error", exit_code=-1, output_tail=str(e)[:1500],
-                duration_sec=round(time.time() - t0, 1),
-                finished_at=time.strftime("%H:%M:%S"),
-            )
-            logger.error(f"[EvoScheduler] 管线异常: {e}")
+        logger.info(f"[EvoScheduler] 开始每日 EVO 管线（{len(steps)} 步）: {_pipeline_cmd()}")
+
+        # 每步完整输出落 logs/evo/scheduler_YYYYMMDD.log（独立日志硬约束）
+        log_path = os.path.join(_EVO_LOG_DIR, f"scheduler_{time.strftime('%Y%m%d')}.log")
+        step_results: List[Dict[str, Any]] = []
+        overall = "ok"
+
+        for i, step in enumerate(steps, 1):
+            t_s = time.time()
+            logger.info(f"[EvoScheduler] 步骤 {i}/{len(steps)} 「{step['name']}」开始")
+            out = ""
+            rc = 0
+            try:
+                proc = subprocess.run(
+                    ["bash", "-c", step["cmd"]],
+                    cwd=PROJECT_ROOT, capture_output=True, text=True,
+                    timeout=EVO_TIMEOUT_SEC,
+                )
+                out = (proc.stdout or "") + (proc.stderr or "")
+                rc = proc.returncode
+            except subprocess.TimeoutExpired as e:
+                out = f"步骤超时（>{EVO_TIMEOUT_SEC}s）已终止\n"
+                out += (e.stdout or "") + (e.stderr or "") if e.stdout or e.stderr else ""
+                rc = -9
+            except Exception as e:
+                out = f"步骤异常: {e}"
+                rc = -1
+
+            dur = round(time.time() - t_s, 1)
+            ok = rc == 0
+            try:
+                with open(log_path, "a", encoding="utf-8") as lf:
+                    lf.write(f"\n===== {time.strftime('%Y-%m-%d %H:%M:%S')} "
+                             f"step={step['key']} rc={rc} dur={dur}s =====\n")
+                    lf.write(out[-20000:])
+            except Exception:
+                pass
+
+            step_results.append({
+                "key": step["key"], "name": step["name"],
+                "required": step["required"], "exit_code": rc,
+                "status": "ok" if ok else "failed",
+                "duration_sec": dur,
+                "tail": out[-800:],
+            })
+            _state.update(steps=list(step_results))  # 实时刷新，status 接口可观察在跑的步骤
+
+            if ok:
+                logger.info(f"[EvoScheduler] 步骤 「{step['name']}」 完成 ({dur}s)")
+            else:
+                logger.error(f"[EvoScheduler] 步骤 「{step['name']}」 失败 rc={rc} ({dur}s)，"
+                             f"尾部输出: {out[-300:]}")
+                if step["required"]:
+                    overall = "error"
+                    break          # 核心步骤失败：终止后续（等价旧 && 语义）
+                overall = "partial"  # 可选步骤失败：隔离继续，但状态显式上报
+
+        _state.update(
+            status=overall,
+            exit_code=0 if overall == "ok" else (1 if overall == "error" else 2),
+            output_tail=(step_results[-1]["tail"] if step_results else ""),
+            duration_sec=round(time.time() - t0, 1),
+            finished_at=time.strftime("%H:%M:%S"),
+        )
+        logger.info(f"[EvoScheduler] 管线结束 status={overall} "
+                    f"耗时 {time.time() - t0:.0f}s，分步: "
+                    + ", ".join(f"{s['key']}={s['status']}" for s in step_results))
     finally:
         _lock.release()
 

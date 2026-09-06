@@ -310,7 +310,11 @@ def calculate_evo_factors(db_path: str = DB_PATH) -> pd.DataFrame:
         if "vol_ratio" not in fv.columns: missing_cols_for_surp.append("vol_ratio")
     if missing_cols_for_surp:
         logger.info(f"[EvoFeature] 从 daily_prices 合并缺失列: {missing_cols_for_surp}")
-        need_dp = ["ts_code", "trade_date", "close", "adj_factor", "vol"]
+        # Tushare pro.daily() close/high/low 默认是前复权价(qfq)，天然连续。
+        # 直接用 close 作为 close_adj，不再依赖 adj_factor（daily_prices.adj_factor
+        # 实际从未被填充，始终为 NULL；用它算 close * fillna(1.0) 本来就等价于 close，
+        # 但保留 adj_factor 容易误导读者以为是后复权，与经典层 20260902 bug 同源）。
+        need_dp = ["ts_code", "trade_date", "close", "vol"]
         dp = pd.read_sql(
             f"SELECT {','.join(need_dp)} FROM daily_prices WHERE trade_date >= '20200301'",
             conn
@@ -319,7 +323,7 @@ def calculate_evo_factors(db_path: str = DB_PATH) -> pd.DataFrame:
         merge_cols = ["ts_code", "trade_date"]
         build_cols = []
         if "close_adj" in missing_cols_for_surp:
-            dp["close_adj"] = dp["close"] * dp["adj_factor"].fillna(1.0)
+            dp["close_adj"] = dp["close"]
             build_cols.append("close_adj")
         if "vol_ratio" in missing_cols_for_surp:
             gb_v = dp.groupby("ts_code", group_keys=False)

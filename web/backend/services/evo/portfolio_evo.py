@@ -186,9 +186,9 @@ def calc_evo_portfolio(
                                            ms.rank(pct=True).to_dict().items()}
                             engine_flags["ml_rank"] = True
                         else:
-                            _logger.warning("[EvoPort] ML 预测数据不足，β 项本次跳过")
+                            logger.warning("[EvoPort] ML 预测数据不足，β 项本次跳过")
                     except Exception as _e:
-                        _logger.warning(f"[EvoPort] ML 预测读取失败（β 项跳过）: {_e}")
+                        logger.warning(f"[EvoPort] ML 预测读取失败（β 项跳过）: {_e}")
 
                 surp_cols: List[str] = []
                 if delta > 1e-9 and engine_flags.get("surprise"):

@@ -834,114 +834,43 @@ def get_recommendation_history(days=30):
         return {"dates": [], "records": [], "stats": {}, "error": str(e), "trace": traceback.format_exc()}
 
 
-def get_timing_alerts(use_portrait_router=True, regime_hint=None):
-    """多周期择时警报：10日动量 / 30日趋势 / 60日波动率 / 画像整体分"""
-    conn = get_db_connection(DB_PATH, timeout=60.0)
+def get_timing_alerts(lookback_days: int = 20) -> dict:
+    """
+    建仓时机预警：基于 scan_history 历史数据，对今日在榜股票评分。
+
+    评分维度（满分 100）：
+      +25 初次入榜（断档 ≥ 3 交易日） / +12 二次入榜（断档 2 天）
+      +20 排名跃升（昨日 > 10 → 今日 ≤ 5）
+      +15 连续第 3 天 / -15 连续 > 7 天（信号透支）
+      +10 因子分 ≥ 90 / Bear/Dark 状态全局 ×1.8 加成
+      -10 今日涨幅 > 3% / -8 今日涨幅 > 5%（追涨风险）
+
+    返回：{ alerts, summary, golden, good, watch, risk, regime, scan_date }
+    """
+    import sqlite3
+    conn = sqlite3.connect(DB_PATH)
     try:
-        opp = get_build_position_opportunities(use_portrait_router=use_portrait_router, regime_hint=regime_hint)
-        opps = opp.get("opportunities", [])
+        _ensure_scan_history_table(conn)
 
-        today = datetime.date.today().isoformat()
-        alerts = []
-        codes = [o["ts_code"] for o in opps[:5]]
+        date_from = (datetime.datetime.now()
+                     - datetime.timedelta(days=lookback_days)).strftime("%Y%m%d")
+        df_all = pd.read_sql(
+            "SELECT * FROM scan_history WHERE scan_date >= ? ORDER BY scan_date DESC, rank ASC",
+            conn, params=(date_from,)
+        )
 
-        if codes:
-            cursor = conn.cursor()
-            cursor.execute("SELECT DISTINCT trade_date FROM daily_prices ORDER BY trade_date DESC LIMIT 120")
-            all_dates = sorted([r[0] for r in cursor.fetchall()])
+        result = _build_timing_alerts(df_all, conn)
 
-            ph = ",".join(["?" for _ in codes])
-            dp_df = pd.read_sql(
-                f"SELECT ts_code, trade_date, close, pct_chg FROM daily_prices "
-                f"WHERE ts_code IN ({ph}) ORDER BY ts_code, trade_date",
-                conn, params=codes
-            )
+        # 按 level 分组，方便前端直接使用
+        alerts = result.get("alerts", [])
+        result["golden"] = [a for a in alerts if a["level"] == "golden"]
+        result["good"]   = [a for a in alerts if a["level"] == "good"]
+        result["watch"]  = [a for a in alerts if a["level"] == "watch"]
+        result["risk"]   = [a for a in alerts if a["level"] == "risk"]
+        # 兼容前端 ScanHistory.jsx 对 "normal" 的解构（good+watch+risk 中的非 golden）
+        result["normal"] = result["good"] + result["watch"] + result["risk"]
 
-        opp_map = {o["ts_code"]: o for o in opps[:5]}
-
-        # S2：从配置读取信号阈值
-        _sig_cfg = get_scanner_cfg().get("signal_thresholds", {})
-        _m10_hi = float(_sig_cfg.get("mom_10_strong_above", 3.0))
-        _m10_lo = float(_sig_cfg.get("mom_10_weak_below", -3.0))
-        _m30_hi = float(_sig_cfg.get("mom_30_strong_above", 10.0))
-        _m30_lo = float(_sig_cfg.get("mom_30_weak_below", 0.0))
-        _vol_lo = float(_sig_cfg.get("vol_60_low_below", 1.5))
-        _vol_hi = float(_sig_cfg.get("vol_60_high_above", 3.0))
-        _ps_excellent = float(_sig_cfg.get("portrait_excellent", 70.0))
-        _ps_pass = float(_sig_cfg.get("portrait_pass", 50.0))
-        _ps_marginal = float(_sig_cfg.get("portrait_marginal", 45.0))
-        _green_min = int(_sig_cfg.get("overall_green_min", 3))
-        _red_min = int(_sig_cfg.get("overall_red_min", 3))
-
-        for code, o in opp_map.items():
-            code_data = dp_df[dp_df["ts_code"] == code].sort_values("trade_date").copy() if codes else pd.DataFrame()
-            if code_data.empty:
-                continue
-            closes = code_data["close"].astype(float).values
-            pct_chgs = code_data["pct_chg"].astype(float).values
-
-            mom_10 = (closes[-1] / closes[-10] - 1) * 100 if len(closes) >= 10 else 0.0
-            mom_30 = (closes[-1] / closes[-30] - 1) * 100 if len(closes) >= 30 else 0.0
-
-            ma_5  = np.mean(closes[-5:])  if len(closes) >= 5  else 0
-            ma_10 = np.mean(closes[-10:]) if len(closes) >= 10 else 0
-            ma_20 = np.mean(closes[-20:]) if len(closes) >= 20 else 0
-            ma_30 = np.mean(closes[-30:]) if len(closes) >= 30 else 0
-            trend_score = 0
-            if ma_5  > ma_10: trend_score += 1
-            if ma_10 > ma_20: trend_score += 1
-            if ma_20 > ma_30: trend_score += 1
-
-            vol_60 = (np.std(pct_chgs[-60:]) if len(pct_chgs) >= 60 else np.std(pct_chgs)) * 100
-
-            portrait_score = float(o.get("portrait_score", 50.0))
-
-            signals = []
-            if mom_10 > _m10_hi:   signals.append(("10日动量强势", "green"))
-            elif mom_10 < _m10_lo: signals.append(("10日动量弱势", "red"))
-            else:               signals.append(("10日动量中性", "grey"))
-
-            if mom_30 > _m30_hi:  signals.append(("30日趋势强势", "green"))
-            elif mom_30 < _m30_lo:   signals.append(("30日趋势弱势", "red"))
-            else:              signals.append(("30日趋势中性", "grey"))
-
-            if trend_score == 3: signals.append(("均线多头排列", "green"))
-            elif trend_score == 0: signals.append(("均线空头排列", "red"))
-            else:                 signals.append((f"均线趋势中性({trend_score}/3)", "blue"))
-
-            if vol_60 < _vol_lo:     signals.append(("波动率较低-稳", "blue"))
-            elif vol_60 > _vol_hi:   signals.append(("波动率较高-慎", "orange"))
-            else:                    signals.append(("波动率适中", "grey"))
-
-            if portrait_score >= _ps_excellent: signals.append(("画像分优秀-可关注", "green"))
-            elif portrait_score >= _ps_pass: signals.append(("画像分达标-可观察", "blue"))
-            elif portrait_score >= _ps_marginal: signals.append(("画像分临线-需谨慎", "orange"))
-            else:                     signals.append(("画像分偏低-慎参与", "red"))
-
-            overall_green = sum(1 for _, c in signals if c == "green")
-            overall_red = sum(1 for _, c in signals if c == "red")
-            if overall_green >= _green_min:     overall_status = "建仓机会"
-            elif overall_red >= _red_min:     overall_status = "观望/减仓"
-            else:                      overall_status = "观察"
-
-            alerts.append({
-                "ts_code": code,
-                "name": o["name"],
-                "date": today,
-                "signals": signals,
-                "overall_status": overall_status,
-                "indicators": {
-                    "momentum_10d": round(mom_10, 2),
-                    "momentum_30d": round(mom_30, 2),
-                    "trend_score": trend_score,
-                    "volatility_60d_pct": round(vol_60, 3),
-                    "portrait_score": round(portrait_score, 1),
-                }
-            })
-        return {"alerts": alerts}
-    except Exception as e:
-        import traceback
-        return {"alerts": [], "error": str(e), "trace": traceback.format_exc()}
+        return result
     finally:
         conn.close()
 

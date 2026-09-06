@@ -1,0 +1,6 @@
+﻿cluster,n_factors,representative,rep_icir,rep_grade,factors,avg_abs_corr_of_rep,cluster_avg_abs_corr
+1,15,vol_ratio,-0.5370242980317668,S,"excess_return_20d, hot_money_score, inter_chip_break_right, inter_overshoot_reversal, inter_quality_momentum, main_force_score, north_net_inflow_ratio, profit_ratio_estimate, return_10d, return_120d, return_20d, return_5d, return_60d, surprise_price_vote, vol_ratio",0.35979796328631186,0.45124807376916126
+2,15,turnover_rate,-0.3246435778503579,A,"atr_ratio, beta_60d, inter_lowvol_profit, inter_smart_defense, inter_turnover_reversal, low_turnover_flag, max_drawdown_20d, max_drawdown_60d, turnover_rate, turnover_rate_20d, turnover_rate_5d, volatility_10d, volatility_120d, volatility_20d, volatility_60d",0.5428330684198167,0.4994166368443247
+3,8,quality_score,0.170011883219362,D,"graham_score, inter_value_excess, pb, pe_ttm, quality_score, roe, surprise_roe_qoq, triple_value_mom_quality",0.48578659686738274,0.3808316344285179
+4,3,chip_concentration,-0.2430231606459369,C,"chip_concentration, inter_chip_volume, strong_control_score",0.612420362586495,0.554034865304457
+5,5,surprise_earnings_gap,-0.6784352336313549,A+,"inter_mom_skew_neg, skewness_20d, surprise_earnings_gap, text_sentiment_score, timeliness_decay",0.04227062591062102,

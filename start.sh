@@ -100,7 +100,7 @@ fi
 FRONTEND_DIR="$DIR/web/frontend"
 DIST_DIR="$FRONTEND_DIR/dist"
 
-# 检查是否需要重新构建（dist 不存在 或 --build 参数）
+# 检查是否需要重新构建（dist 不存在 或 --build 参数 或 源码已变更）
 NEED_BUILD=false
 if [ ! -f "$DIST_DIR/index.html" ]; then
     NEED_BUILD=true
@@ -108,6 +108,16 @@ fi
 
 if [ "${1:-}" = "--build" ] || [ "${1:-}" = "build" ]; then
     NEED_BUILD=true
+fi
+
+# 源码变更检测：src/ 下任何 .jsx/.js/.css 文件比 dist 新 → 自动重建
+if [ "$NEED_BUILD" = false ] && [ -d "$FRONTEND_DIR/src" ]; then
+    NEWER=$(find "$FRONTEND_DIR/src" -type f \( -name "*.jsx" -o -name "*.js" -o -name "*.css" \) \
+        -newer "$DIST_DIR/index.html" 2>/dev/null | head -1)
+    if [ -n "$NEWER" ]; then
+        echo "🔍 检测到源码变更 ($(basename "$NEWER"))，需要重建前端"
+        NEED_BUILD=true
+    fi
 fi
 
 if [ "$NEED_BUILD" = true ]; then

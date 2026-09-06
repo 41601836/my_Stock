@@ -372,9 +372,9 @@ def get_market_overview_data():
             _top_sectors = sector_flow[0]["sectors"] if sector_flow and sector_flow[0].get("type") == "top" else []
             _bot_sectors = sector_flow[1]["sectors"] if len(sector_flow) > 1 and sector_flow[1].get("type") == "bottom" else []
 
-            # 游资题材 Top5（hot_score = 净流入 + 连续天数 + 涨幅，真实输入确定性映射）
+            # 游资题材 Top10（hot_score = 净流入 + 连续天数 + 涨幅，真实输入确定性映射）
             hot_money_themes = []
-            for s in _top_sectors[:5]:
+            for s in _top_sectors[:10]:
                 _hs = (min(40, max(0.0, s["net_inflow_yi"]) * 2)
                        + min(35, s["net_streak"] * 7)
                        + min(25, max(0.0, s["avg_pct"]) * 5))
@@ -421,11 +421,11 @@ def get_market_overview_data():
             result["main_cap_themes"] = main_cap_themes
             result["inflow_rank"] = [
                 {"sector": s["sector"], "flow_value": s["net_inflow_yi"], "pct_chg": s["avg_pct"]}
-                for s in _top_sectors[:5]
+                for s in _top_sectors[:10]
             ]
             result["outflow_rank"] = [
                 {"sector": s["sector"], "flow_value": s["net_inflow_yi"], "pct_chg": s["avg_pct"]}
-                for s in _bot_sectors[:5]
+                for s in _bot_sectors[:10]
             ]
 
             # ===== S3 补齐：style_rotation / adv_dec / temperature / regime =====
