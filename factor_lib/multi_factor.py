@@ -7,11 +7,12 @@ factor_lib.multi_factor
 
 支持的合成方法:
 1. equal_weight       - 等权合成 (基准)
-2. icir_weighted      - ICIR 加权 (因子 ICIR 绝对值为权重)
-3. ic_weighted        - IC 加权 (因子 IC 绝对值为权重)
-4. max_ic             - 最大化 IC (基于 IC 协方差的均值-方差优化)
-5. risk_parity        - 风险平价 (因子波动率倒数加权)
-6. rank_average       - 排名平均 (先排名再平均，减少量纲影响)
+2. icir_weighted      - ICIR 加权 (因子 ICIR 绝对值为权重，全样本静态)
+3. icir_rolling_decay - ICIR 滚动衰减加权 (指数衰减 + 滚动窗口，动态权重)
+4. ic_weighted        - IC 加权 (因子 IC 绝对值为权重)
+5. max_ic             - 最大化 IC (基于 IC 协方差的均值-方差优化)
+6. risk_parity        - 风险平价 (因子波动率倒数加权)
+7. rank_average       - 排名平均 (先排名再平均，减少量纲影响)
 
 所有方法都先对因子做方向对齐（乘以 direction），确保方向一致。
 """
@@ -38,6 +39,7 @@ class MultiFactorCombiner:
     VALID_METHODS = [
         "equal_weight",
         "icir_weighted",
+        "icir_rolling_decay",
         "ic_weighted",
         "max_ic",
         "risk_parity",
@@ -74,9 +76,168 @@ class MultiFactorCombiner:
             df[f] = df.groupby("trade_date")[f].rank(pct=True)
         return df
 
+    # ═══════════════════════════════════════════
+    #  滚动 ICIR 衰减加权（P3-B 新增）
+    # ═══════════════════════════════════════════
+
+    def _compute_factor_ic_series(
+        self, df: pd.DataFrame, factor_name: str,
+        return_col: str = "fwd_ret_5d",
+    ) -> pd.Series:
+        """计算单个因子的每日截面 Rank IC 序列。
+
+        优先使用 ic_engine.compute_ic_series（向量化、更快），
+        如不可用则退化为 groupby + spearman 相关。
+        """
+        try:
+            from factor_lib.ic_engine import ICEngine
+            engine = ICEngine()
+            return engine.compute_ic_series(df, factor_name, "rank", return_col)
+        except Exception:
+            # fallback: 与原有 icir_weighted 一致的计算方式
+            daily_ic = df.groupby("trade_date").apply(
+                lambda g: g[factor_name].corr(g[return_col], method="spearman")
+            )
+            return daily_ic.dropna()
+
+    def _compute_rolling_ic(
+        self, df: pd.DataFrame, factor_name: str,
+        window: int = 60,
+        return_col: str = "fwd_ret_5d",
+    ) -> Tuple[pd.Series, pd.Series]:
+        """滚动计算 IC 均值和 IC 标准差。
+
+        Parameters
+        ----------
+        df : DataFrame
+            面板数据（含 trade_date + 因子列 + 收益列）。
+        factor_name : str
+            因子名。
+        window : int
+            滚动窗口天数（默认 60）。
+        return_col : str
+            未来收益率列名。
+
+        Returns
+        -------
+        rolling_ic_mean : Series
+            滚动 IC 均值，index=trade_date。
+        rolling_ic_std : Series
+            滚动 IC 标准差，index=trade_date。
+        """
+        ic_series = self._compute_factor_ic_series(df, factor_name, return_col)
+        if len(ic_series) == 0:
+            return pd.Series(dtype=float), pd.Series(dtype=float)
+
+        rolling_mean = ic_series.rolling(window=window, min_periods=max(5, window // 4)).mean()
+        rolling_std = ic_series.rolling(window=window, min_periods=max(5, window // 4)).std()
+
+        return rolling_mean, rolling_std
+
+    def _compute_decay_weights(
+        self,
+        rolling_ic_mean: pd.Series,
+        rolling_ic_std: pd.Series,
+        half_life: int = 30,
+        min_ic: float = 0.0,
+        decay_method: str = "exponential",
+    ) -> float:
+        """指数衰减加权的 ICIR。
+
+        越近的 IC 权重越大，半衰期 half_life 天后权重减半。
+        如果近期（衰减加权后）IC 均值 < min_ic，则权重置 0。
+
+        Parameters
+        ----------
+        rolling_ic_mean : Series
+            滚动 IC 均值序列。
+        rolling_ic_std : Series
+            滚动 IC 标准差序列。
+        half_life : int
+            半衰期天数（默认 30）。
+        min_ic : float
+            IC 均值低于此值则权重清零（默认 0.0）。
+        decay_method : str
+            衰减方式，目前仅支持 'exponential'。
+
+        Returns
+        -------
+        icir_decayed : float
+            衰减加权后的 ICIR 值（取绝对值作为权重）。
+        """
+        # 取最后一个有效窗口的数据
+        valid_idx = rolling_ic_mean.dropna().index
+        if len(valid_idx) == 0:
+            return 0.0
+
+        # 用整个 IC 序列做衰减加权（不只是滚动窗口内）
+        ic_series = rolling_ic_mean.copy()
+        std_series = rolling_ic_std.copy()
+
+        # 只保留非 NaN 的行
+        mask = ic_series.notna() & std_series.notna()
+        ic_vals = ic_series[mask]
+        std_vals = std_series[mask]
+
+        if len(ic_vals) == 0:
+            return 0.0
+
+        n = len(ic_vals)
+        # 距离当前的天数（0 = 最近一天，n-1 = 最远一天）
+        days_ago = np.arange(n - 1, -1, -1)
+
+        if decay_method == "exponential":
+            # decay_factor = exp(-ln(2) * days_ago / half_life)
+            decay = np.exp(-np.log(2) * days_ago / half_life)
+        else:
+            # 线性衰减兜底
+            decay = np.maximum(1.0 - days_ago / (half_life * 2), 0.0)
+
+        # 衰减加权 IC 均值
+        weighted_ic_mean = float(np.average(ic_vals.values, weights=decay))
+
+        # 衰减加权 IC 标准差（加权标准差）
+        mean_val = weighted_ic_mean
+        weighted_var = float(np.average((ic_vals.values - mean_val) ** 2, weights=decay))
+        weighted_ic_std = float(np.sqrt(max(weighted_var, 1e-12)))
+
+        # 负 IC 清零
+        if weighted_ic_mean < min_ic:
+            return 0.0
+
+        icir = weighted_ic_mean / weighted_ic_std if weighted_ic_std > 1e-12 else 0.0
+        return abs(icir)
+
+    def _compute_rolling_decay_icir(
+        self, df: pd.DataFrame, factors: List[str],
+        return_col: str = "fwd_ret_5d",
+        ic_window: int = 60,
+        ic_half_life: int = 30,
+        min_ic: float = 0.0,
+        decay_method: str = "exponential",
+    ) -> Dict[str, float]:
+        """对所有因子计算衰减加权 ICIR，返回 {factor_name: |ICIR_decayed|}。
+
+        IC < min_ic 的因子权重自动清零。
+        """
+        result = {}
+        for f in factors:
+            roll_mean, roll_std = self._compute_rolling_ic(
+                df, f, window=ic_window, return_col=return_col
+            )
+            icir_val = self._compute_decay_weights(
+                roll_mean, roll_std,
+                half_life=ic_half_life,
+                min_ic=min_ic,
+                decay_method=decay_method,
+            )
+            result[f] = icir_val
+        return result
+
     def _compute_weights(self, df: pd.DataFrame, factors: List[str],
                          return_col: str = "fwd_ret_5d",
-                         ic_history: Optional[pd.DataFrame] = None) -> Dict[str, float]:
+                         ic_history: Optional[pd.DataFrame] = None,
+                         config: Optional[Dict] = None) -> Dict[str, float]:
         """根据方法计算因子权重"""
         n = len(factors)
 
@@ -89,6 +250,27 @@ class MultiFactorCombiner:
             if total == 0:
                 return {f: 1.0 / n for f in factors}
             return {f: w.get(f, 0) / total for f in factors}
+
+        if self.method == "icir_rolling_decay":
+            # 滚动窗口 + 指数衰减的 ICIR 加权（使用 ic_engine 向量化计算）
+            cfg = config or {}
+            ic_window = int(cfg.get("ic_window", 60))
+            ic_half_life = int(cfg.get("ic_half_life", 30))
+            min_ic = float(cfg.get("min_ic", 0.0))
+            decay_method = str(cfg.get("decay_method", "exponential"))
+
+            icir_vals = self._compute_rolling_decay_icir(
+                df, factors, return_col=return_col,
+                ic_window=ic_window,
+                ic_half_life=ic_half_life,
+                min_ic=min_ic,
+                decay_method=decay_method,
+            )
+            weights = {f: icir_vals.get(f, 0.0) for f in factors}
+            total = sum(weights.values())
+            if total == 0:
+                return {f: 1.0 / n for f in factors}
+            return {f: w / total for f, w in weights.items()}
 
         # 需要 IC 数据的方法
         ic_values = {}
@@ -164,7 +346,8 @@ class MultiFactorCombiner:
 
     def combine(self, df: pd.DataFrame, factors: List[str],
                 return_col: str = "fwd_ret_5d",
-                output_col: str = "composite_score") -> pd.DataFrame:
+                output_col: str = "composite_score",
+                config: Optional[Dict] = None) -> pd.DataFrame:
         """合成多因子得分
 
         Parameters
@@ -177,6 +360,12 @@ class MultiFactorCombiner:
             未来收益率列名（用于计算 ICIR 等权重）
         output_col : str
             输出的合成得分列名
+        config : dict, optional
+            额外配置参数，用于 icir_rolling_decay 等动态方法：
+              - ic_window: int, 滚动窗口天数（默认 60）
+              - ic_half_life: int, 半衰期天数（默认 30）
+              - min_ic: float, IC 低于此值权重清零（默认 0.0）
+              - decay_method: str, 衰减方式 'exponential'（默认）
 
         Returns
         -------
@@ -193,7 +382,7 @@ class MultiFactorCombiner:
             df = self._rank_normalize(df, factors)
 
         # 计算权重
-        weights = self._compute_weights(df, factors, return_col)
+        weights = self._compute_weights(df, factors, return_col, config=config)
         self.computed_weights_ = weights
 
         # 加权求和
@@ -238,8 +427,8 @@ def run_multi_factor_compare(df: pd.DataFrame, factors: List[str],
     dict : {method_name: {"weights": dict, "composite_series": Series, "ic": float, "icir": float}}
     """
     if methods is None:
-        methods = ["equal_weight", "icir_weighted", "ic_weighted",
-                   "max_ic", "risk_parity", "rank_average"]
+        methods = ["equal_weight", "icir_weighted", "icir_rolling_decay",
+                   "ic_weighted", "max_ic", "risk_parity", "rank_average"]
 
     results = {}
     for method in methods:

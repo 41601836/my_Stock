@@ -1,0 +1,1043 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>项目升级方案 v3.1 — 微观特征 + 中性化 + 统一优化器 + 四重共振</title>
+<style>
+  :root {
+    --bg: #0a0f1a;
+    --bg2: #0E1524;
+    --bg3: #070c18;
+    --border: #1a2540;
+    --border2: #222F4C;
+    --text: #e2e8f0;
+    --text2: #94a3b8;
+    --text3: #64748b;
+    --amber: #f59e0b;
+    --amber2: #fbbf24;
+    --cyan: #06b6d4;
+    --emerald: #10b981;
+    --red: #ef4444;
+    --violet: #8b5cf6;
+    --orange: #f97316;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'PingFang SC', 'SF Pro Display', -apple-system, system-ui, sans-serif;
+    line-height: 1.7;
+    font-size: 15px;
+  }
+  .container { max-width: 1100px; margin: 0 auto; padding: 32px 24px 80px; }
+
+  /* Header */
+  .header {
+    background: linear-gradient(135deg, #0a0f1a 0%, #0E1524 50%, #070c18 100%);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 40px 36px;
+    margin-bottom: 32px;
+    position: relative;
+    overflow: hidden;
+  }
+  .header::before {
+    content: '';
+    position: absolute;
+    top: -50%; right: -20%;
+    width: 500px; height: 500px;
+    background: radial-gradient(circle, rgba(245,158,11,0.06) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .header h1 {
+    font-size: 28px;
+    font-weight: 700;
+    background: linear-gradient(135deg, #fbbf24, #f97316);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 8px;
+  }
+  .header .subtitle { color: var(--text2); font-size: 15px; margin-bottom: 16px; }
+  .header .meta {
+    display: flex; gap: 12px; flex-wrap: wrap;
+    font-size: 12px; color: var(--text3);
+  }
+  .header .meta span {
+    background: var(--bg3); border: 1px solid var(--border);
+    padding: 3px 10px; border-radius: 6px;
+  }
+
+  /* Section */
+  .section {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px 28px;
+    margin-bottom: 24px;
+  }
+  .section-title {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 20px; font-weight: 600;
+    margin-bottom: 6px;
+    color: var(--text);
+  }
+  .section-title .badge {
+    font-size: 11px; font-weight: 700;
+    padding: 2px 10px; border-radius: 4px;
+    text-transform: uppercase;
+  }
+  .badge-p1 { background: rgba(16,185,129,0.15); color: var(--emerald); border: 1px solid rgba(16,185,129,0.3); }
+  .badge-p2 { background: rgba(6,182,212,0.15); color: var(--cyan); border: 1px solid rgba(6,182,212,0.3); }
+  .badge-p3 { background: rgba(139,92,246,0.15); color: var(--violet); border: 1px solid rgba(139,92,246,0.3); }
+  .badge-p4 { background: rgba(239,68,68,0.15); color: var(--red); border: 1px solid rgba(239,68,68,0.3); }
+  .section-desc { color: var(--text2); font-size: 14px; margin-bottom: 20px; }
+
+  /* Phase header bar */
+  .phase-bar {
+    display: flex; align-items: center; gap: 16px;
+    padding: 14px 20px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 20px;
+  }
+  .phase-num {
+    width: 36px; height: 36px;
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; font-weight: 700;
+  }
+  .phase-num.p1 { background: linear-gradient(135deg, #10b981, #059669); color: #fff; }
+  .phase-num.p2 { background: linear-gradient(135deg, #06b6d4, #0891b2); color: #fff; }
+  .phase-num.p3 { background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff; }
+  .phase-num.p4 { background: linear-gradient(135deg, #ef4444, #dc2626); color: #fff; }
+  .phase-bar .title { font-size: 16px; font-weight: 600; }
+  .phase-bar .spacer { flex: 1; }
+  .phase-bar .est {
+    font-size: 12px; color: var(--text3);
+    background: var(--bg2); padding: 3px 10px; border-radius: 6px;
+    border: 1px solid var(--border);
+  }
+
+  /* Step card */
+  .step {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 22px;
+    margin-bottom: 16px;
+  }
+  .step-header {
+    display: flex; align-items: flex-start; gap: 12px;
+    margin-bottom: 12px;
+  }
+  .step-id {
+    font-size: 12px; font-weight: 700; font-family: 'JetBrains Mono', monospace;
+    color: var(--amber);
+    background: rgba(245,158,11,0.1);
+    border: 1px solid rgba(245,158,11,0.25);
+    padding: 2px 8px; border-radius: 5px;
+    white-space: nowrap;
+  }
+  .step-title { font-size: 15px; font-weight: 600; flex: 1; }
+  .step-body { color: var(--text2); font-size: 14px; line-height: 1.8; }
+  .step-body p { margin-bottom: 8px; }
+  .step-body ul { padding-left: 18px; margin-bottom: 8px; }
+  .step-body li { margin-bottom: 4px; }
+
+  /* Code block */
+  .code {
+    background: #060b14;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin: 10px 0;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 13px;
+    color: #a5d6ff;
+    overflow-x: auto;
+    line-height: 1.6;
+  }
+  .code .kw { color: #c084fc; }
+  .code .fn { color: #fbbf24; }
+  .code .str { color: #86efac; }
+  .code .cmt { color: #475569; }
+  .code .num { color: #f97316; }
+
+  /* Table */
+  .tbl {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    font-size: 13px;
+  }
+  .tbl th {
+    text-align: left;
+    background: var(--bg3);
+    color: var(--text2);
+    font-weight: 600;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border2);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .tbl td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text2);
+  }
+  .tbl tr:hover td { background: rgba(245,158,11,0.04); }
+  .tbl .mono { font-family: 'JetBrains Mono', monospace; color: var(--amber2); }
+
+  /* Resonance mapping box */
+  .resonance-box {
+    background: linear-gradient(135deg, rgba(245,158,11,0.06), rgba(139,92,246,0.04));
+    border: 1px solid rgba(245,158,11,0.2);
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin: 10px 0;
+  }
+  .resonance-box .label {
+    font-size: 11px; font-weight: 700;
+    color: var(--amber);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 6px;
+  }
+  .resonance-box .content { color: var(--text2); font-size: 13px; }
+
+  /* Arrow / dependency */
+  .dep {
+    display: flex; align-items: center; gap: 8px;
+    color: var(--text3); font-size: 12px;
+    margin: 12px 0 16px 20px;
+  }
+  .dep .arrow { color: var(--amber); font-size: 16px; }
+
+  /* Summary card */
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+    margin: 16px 0;
+  }
+  .summary-card {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+  }
+  .summary-card .num {
+    font-size: 24px; font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    margin-bottom: 4px;
+  }
+  .summary-card .label { font-size: 12px; color: var(--text3); }
+
+  /* Highlight */
+  .hl { color: var(--amber2); font-weight: 600; }
+  .hl-green { color: var(--emerald); font-weight: 600; }
+  .hl-red { color: var(--red); font-weight: 600; }
+  .hl-cyan { color: var(--cyan); font-weight: 600; }
+  .hl-violet { color: var(--violet); font-weight: 600; }
+
+  /* Tag pill */
+  .pill {
+    display: inline-block;
+    font-size: 11px; font-weight: 600;
+    padding: 2px 8px; border-radius: 4px;
+    margin-right: 4px;
+  }
+  .pill-new { background: rgba(16,185,129,0.12); color: var(--emerald); border: 1px solid rgba(16,185,129,0.25); }
+  .pill-mod { background: rgba(245,158,11,0.12); color: var(--amber); border: 1px solid rgba(245,158,11,0.25); }
+  .pill-res { background: rgba(139,92,246,0.12); color: var(--violet); border: 1px solid rgba(139,92,246,0.25); }
+
+  .divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--border2), transparent);
+    margin: 24px 0;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<!-- ══════════════════ Header ══════════════════ -->
+<div class="header">
+  <h1>项目升级方案 v3.1</h1>
+  <div class="subtitle">微观博弈特征 × 因子中性化 × 统一组合优化器 × 四重共振策略嵌入</div>
+  <div class="meta">
+    <span>Base: tag v3.0</span>
+    <span>Target: v3.1</span>
+    <span>日期: 2026-09-06</span>
+    <span>零侵入原则</span>
+  </div>
+</div>
+
+<!-- ══════════════════ 总览 ══════════════════ -->
+<div class="section">
+  <div class="section-title">总览：四阶段升级路线图</div>
+  <div class="section-desc">从"因子质量"到"组合优化"到"策略共振"的全链路升级，每阶段独立可验证，不破坏现有系统。</div>
+
+  <div class="summary-grid">
+    <div class="summary-card">
+      <div class="num" style="color:var(--emerald)">4</div>
+      <div class="label">升级阶段</div>
+    </div>
+    <div class="summary-card">
+      <div class="num" style="color:var(--cyan)">12</div>
+      <div class="label">具体步骤</div>
+    </div>
+    <div class="summary-card">
+      <div class="num" style="color:var(--amber)">8</div>
+      <div class="label">新因子</div>
+    </div>
+    <div class="summary-card">
+      <div class="num" style="color:var(--violet)">4</div>
+      <div class="label">四重共振维度</div>
+    </div>
+  </div>
+
+  <table class="tbl">
+    <thead>
+      <tr>
+        <th>阶段</th>
+        <th>主题</th>
+        <th>核心理念</th>
+        <th>预估</th>
+        <th>四重共振嵌入</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="pill pill-new">P1</span></td>
+        <td class="hl-green">清洗与收敛</td>
+        <td>因子中性化 + 正交化，做减法提升纯度</td>
+        <td>1-2 天</td>
+        <td>为四维提供纯净底座</td>
+      </tr>
+      <tr>
+        <td><span class="pill pill-new">P2</span></td>
+        <td class="hl-cyan">特征升级</td>
+        <td>隔夜日内分离 / Amihud / GK波动率 / CYQ筹码</td>
+        <td>3-5 天</td>
+        <td>筹码→CYQ, 资金→Amihud, 情绪→隔夜</td>
+      </tr>
+      <tr>
+        <td><span class="pill pill-new">P3</span></td>
+        <td class="hl-violet">架构整合</td>
+        <td>MVO凸优化 + IC-IR滚动衰减 + 策略降维 + 门控</td>
+        <td>5-8 天</td>
+        <td>四维共振评分 → 优化器约束</td>
+      </tr>
+      <tr>
+        <td><span class="pill pill-new">P4</span></td>
+        <td class="hl-red">防过拟合</td>
+        <td>Purged WF-CV + IC半衰期 + 三段审计集成</td>
+        <td>2-3 天</td>
+        <td>共振信号回测验证</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="dep">
+    <span class="arrow">→</span>
+    P1 和 P2 可并行 · P3 依赖 P1+P2 · P4 依赖 P3
+  </div>
+</div>
+
+<!-- ══════════════════ Phase 1 ══════════════════ -->
+<div class="section">
+  <div class="phase-bar">
+    <div class="phase-num p1">1</div>
+    <div class="title">清洗与收敛（做减法）— 因子中性化与正交化</div>
+    <div class="spacer"></div>
+    <div class="est">1-2 天 · ROI 最高</div>
+  </div>
+
+  <div class="section-desc">
+    不加新因子、不改因子逻辑，仅通过截面回归残差化剥离 size + industry 暴露，再用对称正交化消除组内共线性。
+    这是提升因子纯度"立竿见影"的工程手段。
+  </div>
+
+  <!-- Step 1A -->
+  <div class="step">
+    <div class="step-header">
+      <span class="step-id">1A</span>
+      <span class="step-title">因子中性化引擎 — 行业 + 市值双重残差化</span>
+      <span class="pill pill-new">新建</span>
+    </div>
+    <div class="step-body">
+      <p><b>目标</b>：每个因子在截面回归中剥离 <span class="hl">对数自由流通市值</span>和 <span class="hl">申万一级行业虚拟变量</span>，仅保留残差 ε 作为纯净 Alpha。</p>
+      <p><b>数学</b>：</p>
+      <div class="code">
+Factor_raw = β_size × ln(free_mv) + Σ β_ind × Industry_i + ε
+<span class="cmt"># ε = neutralized factor（纯净 Alpha）</span>
+      </div>
+      <p><b>实现</b>：</p>
+      <ul>
+        <li><span class="pill pill-new">新建</span> <code>factor_lib/neutralizer.py</code> — 核心中性化引擎</li>
+        <li>截面回归用 <code>statsmodels.OLS</code>，按每个交易日独立拟合</li>
+        <li>残差写入新表 <code>factor_values_neutral</code>（不覆盖原表）</li>
+        <li>行业分类从 <code>stock_list.industry</code> 获取（已有）</li>
+        <li>自由流通市值从 Tushare <code>daily_basic</code> 获取（需新增数据拉取）</li>
+      </ul>
+      <p><b>关键函数设计</b>：</p>
+      <div class="code">
+<span class="kw">class</span> <span class="fn">FactorNeutralizer</span>:
+    <span class="kw">def</span> <span class="fn">neutralize</span>(self, factor_df, date):
+        <span class="cmt"># 1. 取当日截面: [ts_code, factor_value, ln_free_mv, industry]</span>
+        <span class="cmt"># 2. 构造 X = [ln_free_mv, industry_dummies]</span>
+        <span class="cmt"># 3. OLS: y = Xβ + ε</span>
+        <span class="cmt"># 4. 返回残差 ε 作为 neutralized factor</span>
+        <span class="cmt"># 5. 标准化残差: (ε - mean) / std</span>
+
+    <span class="kw">def</span> <span class="fn">batch_neutralize</span>(self, factor_names, start_date, end_date):
+        <span class="cmt"># 按交易日循环，批量产出 factor_values_neutral 表</span>
+      </div>
+      <p><b>验证</b>：对 36 个因子跑中性化后 IC，对比原始 IC，确认哪些因子在中性化后仍然显著</p>
+
+      <div class="resonance-box">
+        <div class="label">四重共振嵌入</div>
+        <div class="content">中性化是四重共振的"底座"——筹码/资金/板块/情绪四维分数只有在剥离了 size + industry 暴露后，才能反映真实的 Alpha 信号，否则只是行业 Beta 的重复表达。</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 1B -->
+  <div class="step">
+    <div class="step-header">
+      <span class="step-id">1B</span>
+      <span class="step-title">因子池正交化 — 对称正交（Symmetric Orthogonalization）</span>
+      <span class="pill pill-new">新建</span>
+    </div>
+    <div class="step-body">
+      <p><b>目标</b>：消除同组因子的多重共线性，避免在同一风险因子上重复加杠杆。</p>
+      <p><b>方法</b>：对动量组、流动性组、聪明钱组分别做对称正交化</p>
+      <div class="code">
+<span class="cmt"># 对称正交化: F_orth = F × (F'F)^{-1/2}</span>
+<span class="cmt"># 保持因子均值和方差不变，仅消除组内相关性</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">from</span> scipy.linalg <span class="kw">import</span> sqrtm
+
+<span class="kw">def</span> <span class="fn">symmetric_orthogonalize</span>(F):
+    <span class="cmt"># F: (N_stocks, K_factors) 矩阵</span>
+    cov = F.T @ F / (F.shape[<span class="num">0</span>] - <span class="num">1</span>)
+    F_orth = F @ np.linalg.pinv(sqrtm(cov))
+    <span class="kw">return</span> F_orth.real
+      </div>
+      <p><b>因子分组</b>：</p>
+      <table class="tbl">
+        <thead><tr><th>组别</th><th>当前因子</th><th>正交化后效果</th></tr></thead>
+        <tbody>
+          <tr><td>动量/反转</td><td class="mono">return_5d, return_20d, return_120d, excess_return_20d</td><td>消除中期/短期动量共线</td></tr>
+          <tr><td>流动性</td><td class="mono">turnover_rate, turnover_rate_5d, turnover_rate_20d, vol_ratio</td><td>消除换手率族共线</td></tr>
+          <tr><td>聪明钱/微观</td><td class="mono">north_net_inflow_ratio, chip_concentration, profit_ratio_estimate</td><td>消除筹码类共线</td></tr>
+        </tbody>
+      </table>
+      <p><b>文件</b>：<span class="pill pill-new">新建</span> <code>factor_lib/orthogonalizer.py</code></p>
+    </div>
+  </div>
+
+  <!-- Step 1C -->
+  <div class="step">
+    <div class="step-header">
+      <span class="step-id">1C</span>
+      <span class="step-title">纯净 IC 重验 — 中性化后因子有效性确认</span>
+      <span class="pill pill-mod">改造</span>
+    </div>
+    <div class="step-body">
+      <p><b>目标</b>：对 36 个因子跑中性化 + 正交化后的 IC，与原始 IC 对比，剔除不显著的。</p>
+      <p><b>实现</b>：</p>
+      <ul>
+        <li>复用现有 <code>factor_lib/ic_engine.py</code> 的 <code>compute_ic_series()</code> + <code>compute_ic_summary()</code></li>
+        <li><span class="pill pill-mod">改造</span> 在 IC 引擎中新增 <code>use_neutral=True</code> 参数，切换读取 <code>factor_values_neutral</code> 表</li>
+        <li>产出对比报告：原始 IC vs 纯净 IC，标注哪些因子中性化后失效</li>
+      </ul>
+      <p><b>决策规则</b>：</p>
+      <ul>
+        <li><span class="hl-green">KEEP</span>：纯净 |ICIR| ≥ 0.15 且方向未翻转</li>
+        <li><span class="hl-red">DROP</span>：纯净 |ICIR| < 0.10 或方向翻转</li>
+        <li><span class="hl">REVIEW</span>：0.10 ~ 0.15 之间，保留观察</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════ Phase 2 ══════════════════ -->
+<div class="section">
+  <div class="phase-bar">
+    <div class="phase-num p2">2</div>
+    <div class="title">特征升级（做深度）— 微观博弈特征日频化</div>
+    <div class="spacer"></div>
+    <div class="est">3-5 天 · 不需新数据源</div>
+  </div>
+
+  <div class="section-desc">
+    所有新特征用现有 Tushare 日线 OHLCV 计算，不需引入新数据源。每个因子注册到 <code>factor_lib/registry.py</code>，写入 <code>factor_values</code> 表。
+  </div>
+
+  <!-- Step 2A -->
+  <div class="step">
+    <div class="step-header">
+      <span class="step-id">2A</span>
+      <span class="step-title">隔夜收益与日内收益分离</span>
+      <span class="pill pill-new">新建</span> <span class="pill pill-res">情绪维度</span>
+    </div>
+    <div class="step-body">
+      <p><b>逻辑</b>：A股"散户推动隔夜开盘、机构量化主导日内博弈"。隔夜跳空与日内动量的信息含量截然不同。</p>
+      <div class="code">
+<span class="cmt"># 隔夜收益: T 日收盘 → T+1 日开盘</span>
+overnight_return = open(t+1) / close(t) - <span class="num">1</span>
+
+<span class="cmt"># 日内收益: T+1 日开盘 → T+1 日收盘</span>
+intraday_return = close(t+1) / open(t+1) - <span class="num">1</span>
+
+<span class="cmt"># 衍生因子: 5日隔夜均值 / 5日日内均值 / 隔夜-日内分离度</span>
+overnight_mean_5d = mean(overnight_return, <span class="num">5</span>)
+intraday_mean_5d  = mean(intraday_return, <span class="num">5</span>)
+overnight_intraday_gap = overnight_mean_5d - intraday_mean_5d
+      </div>
+      <p><b>注册因子</b>：<code>overnight_return_5d</code>（反向，隔夜高的散户情绪过热）、<code>intraday_momentum_5d</code>（正向，日内机构博弈方向）</p>
+
+      <div class="resonance-box">
+        <div class="label">四重共振 · 情绪维度</div>
+        <div class="content">隔夜收益直接反映散户情绪（集合竞价跳空），是"情绪"维度的微观特征。当隔夜收益极高 + 换手率分位 > 0.8 → 情绪高潮信号 → 触发卖出铁律①。</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2B -->
+  <div class="step">
+    <div class="step-header">
+      <span class="step-id">2B</span>
+      <span class="step-title">Amihud 非流动性 + 成交额波动率 + 成交量偏度</span>
+      <span class="pill pill-new">新建</span> <span class="pill pill-res">资金维度</span>
+    </div>
+    <div class="step-body">
+      <p><b>Amihud 非流动性</b>：衡量"每单位成交额推动的价格位移"</p>
+      <div class="code">
+amihud_illiq_20d = mean(|daily_ret| / daily_amount, <span class="num">20</span>)
+<span class="cmt"># 值越大 = 流动性越差 = 价格冲击成本越高</span>
+      </div>
+      <p><b>成交额波动率</b>：捕捉筹码锁仓与恐慌抛售的分歧度</p>
+      <div class="code">
+turnover_volatility_20d = std(turnover_rate, <span class="num">20</span>)
+<span class="cmt"># 高波动 = 筹码松动，多空分歧加大</span>
+      </div>
+      <p><b>成交量偏度</b>：识别放量方向的不对称性</p>
+      <div class="code">
+volume_skewness_20d = skew(daily_volume, <span class="num">20</span>)
+<span class="cmt"># 正偏 = 放量上涨多于放量下跌（资金净流入）</span>
+<span class="cmt"># 负偏 = 放量下跌为主（资金出逃）</span>
+      </div>
+      <p><b>注册因子</b>：<code>amihud_illiq</code>（反向）、<code>turnover_volatility</code>（反向）、<code>volume_skewness</code>（正向）</p>
+
+      <div class="resonance-box">
+        <div class="label">四重共振 · 资金维度</div>
+        <div class="content">Amihud + 成交量偏度组合替代原始 vol_ratio，形成"资金微观冲击"复合信号。当 Amihud 飙升 + 偏度转负 → 资金持续流出 → 触发卖出铁律②。</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2C -->
+  <div class="step">
+    <div class="step-header">
+      <span class="step-id">2C</span>
+      <span class="step-title">Garman-Klass 高阶波动率估计器</span>
+      <span class="pill pill-new">新建</span> <span class="pill pill-res">资金维度</span>
+    </div>
+    <div class="step-body">
+      <p><b>逻辑</b>：基于 High/Low/Close/Open 的 GK 估计器比收盘价标准差统计效率高 5-8 倍。</p>
+      <div class="code">
+<span class="cmt"># Garman-Klass 波动率 (年化)</span>
+sigma_gk = sqrt(
+    (<span class="num">1</span>/n) × Σ [
+        <span class="num">0.5</span> × (ln(H/L))²
+        - (<span class="num">2</span>×ln2 - <span class="num">1</span>) × (ln(C/O))²
+    ]
+) × sqrt(<span class="num">252</span>)
+      </div>
+      <p><b>注册因子</b>：<code>gk_volatility_20d</code>（反向，替代现有 <code>volatility_20d</code>）</p>
+      <p><b>注意</b>：保留原 <code>volatility_20d</code> 不删，新因子并行写入，IC 对比后决定是否替换</p>
+    </div>
+  </div>
+
+  <!-- Step 2D -->
+  <div class="step">
+    <div class="step-header">
+      <span class="step-id">2D</span>
+      <span class="step-title">CYQ 筹码分布模型 — 真实浮盈比例与上方抛压</span>
+      <span class="pill pill-new">新建</span> <span class="pill pill-res">筹码维度</span>
+    </div>
+    <div class="step-body">
+      <p><b>逻辑</b>：摒弃"均线绝对偏离"的简陋做法，用指数衰减换手率加权计算筹码持仓成本分布（CYQ 模型）。</p>
+      <div class="code">
+<span class="cmt"># CYQ 筹码成本分布模型</span>
+<span class="cmt"># 1. 对过去 K 日（如 60 日），按换手率指数衰减加权</span>
+decay_factor = exp(-lambda × day_offset)  <span class="cmt"># lambda = 衰减系数</span>
+weight_t = turnover_rate(t) × decay_factor
+
+<span class="cmt"># 2. 每日成交价近似为当日 VWAP（或 (H+L+C)/3）</span>
+price_t = (high + low + close) / <span class="num">3</span>
+
+<span class="cmt"># 3. 加权构建成本分布直方图 → 形成筹码峰</span>
+cost_distribution = weighted_histogram(price_t, weight_t)
+
+<span class="cmt"># 4. 计算衍生指标</span>
+profit_ratio = <span class="fn">sum</span>(weights[price < current_price]) / total_weight
+upper_pressure = <span class="fn">sum</span>(weights[price > current_price]) / total_weight
+chip_peak_price = argmax(cost_distribution)
+      </div>
+      <p><b>注册因子</b>：<code>cyq_profit_ratio</code>（反向，浮盈比例高→抛压大）、<code>cyq_upper_pressure</code>（反向）</p>
+      <p><b>文件</b>：<span class="pill pill-new">新建</span> <code>src/cyq_model.py</code> — 筹码分布核心算法</p>
+
+      <div class="resonance-box">
+        <div class="label">四重共振 · 筹码维度</div>
+        <div class="content">CYQ 模型替代当前简陋的 <code>chip_concentration</code>（均线偏离），直接输出"多少筹码在当前价以下"（浮盈比例）和"上方有多少套牢盘"（抛压阻力）。浮盈比例 > 0.85 = 筹码分散 → 触发共振弱化信号。</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2E -->
+  <div class="step">
+    <div class="step-header">
+      <span class="step-id">2E</span>
+      <span class="step-title">板块强度因子 — 将概览数据因子化</span>
+      <span class="pill pill-new">新建</span> <span class="pill pill-res">板块维度</span>
+    </div>
+    <div class="step-body">
+      <p><b>现状</b>：<code>market_overview.py</code> 已有板块资金流 Top/Bottom 数据，但未形成可复用因子。</p>
+      <p><b>逻辑</b>：将板块资金净流入排名 + 板块内个股涨跌中位数，合成为个股层面的板块强度信号。</p>
+      <div class="code">
+<span class="cmt"># 1. 计算板块维度指标</span>
+sector_net_inflow_rank = rank(sectors, by=net_inflow)  <span class="cmt"># 板块排名</span>
+sector_breadth = median(stock_returns_in_sector)       <span class="cmt"># 板块宽度</span>
+
+<span class="cmt"># 2. 映射到个股层面</span>
+sector_strength = sector_net_inflow_rank + sector_breadth
+<span class="cmt"># 每只股票继承其所在板块的强度分数</span>
+      </div>
+      <p><b>注册因子</b>：<code>sector_strength</code>（正向，板块强则个股大概率跟随）</p>
+      <p><b>文件</b>：<span class="pill pill-new">新建</span> <code>src/sector_factor.py</code></p>
+
+      <div class="resonance-box">
+        <div class="label">四重共振 · 板块维度</div>
+        <div class="content">板块强度因子是"板块"维度的核心信号。当板块强度连续 3 日下降 → 板块逻辑弱化 → 触发卖出铁律②。这是当前项目最大的缺口（已有行业分类但无板块因子）。</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2F -->
+  <div class="step">
+    <div class="step-header">
+      <span class="step-id">2F</span>
+      <span class="step-title">情绪复合因子 — 文本情绪 + 换手分位 + 连板天数</span>
+      <span class="pill pill-new">新建</span> <span class="pill pill-res">情绪维度</span>
+    </div>
+    <div class="step-body">
+      <p><b>逻辑</b>：将已有 <code>text_sentiment_score</code>（文本情绪）+ <code>turnover_rate</code> 分位数 + 连续涨停天数，合成为统一情绪信号。</p>
+      <div class="code">
+sentiment_composite = <span class="num">0.4</span> × rank_norm(text_sentiment_score)
+                   + <span class="num">0.3</span> × rank_norm(turnover_percentile_60d)
+                   + <span class="num">0.3</span> × rank_norm(consecutive_limit_up_days)
+<span class="cmt"># 值越高 = 情绪越亢奋（反向因子，高位预警）</span>
+      </div>
+      <p><b>注册因子</b>：<code>sentiment_composite</code>（反向，情绪过高时风险增加）</p>
+      <p><b>数据来源</b>：文本情绪已有（EVO pipeline），换手率已有，连板天数需从日线涨幅计算</p>
+
+      <div class="resonance-box">
+        <div class="label">四重共振 · 情绪维度</div>
+        <div class="content">情绪复合因子 > 0.8 = 情绪高潮 → 触发卖出铁律①"预期兑现 + 情绪高潮 → 分批止盈"。这是将"卖股看信号"量化的核心环节。</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════ Phase 3 ══════════════════ -->
+<div class="section">
+  <div class="phase-bar">
+    <div class="phase-num p3">3</div>
+    <div class="title">架构整合 — 从单策略到统一组合优化器</div>
+    <div class="spacer"></div>
+    <div class="est">5-8 天 · 依赖 P1+P2</div>
+  </div>
+
+  <div class="section-desc">
+    将碎片化策略收敛为统一信号层 → MVO 凸优化器在约束下求解最优组合。引入 IC-IR 滚动衰减加权，替代全样本静态权重。
+  </div>
+
+  <!-- Step 3A -->
+  <div class="step">
+    <div class="step-header">
+      <span class="step-id">3A</span>
+      <span class="step-title">MVO 组合优化器 — 凸优化求解最大 IC/IR</span>
+      <span class="pill pill-new">新建</span>
+    </div>
+    <div class="step-body">
+      <p><b>目标</b>：替代当前等权 + max_weight 硬上限的朴素方案。</p>
+      <div class="code">
+<span class="cmt"># 优化目标: 最大化预期超额收益</span>
+max  μ' w
+s.t. Σ w_i = <span class="num">1</span>                    <span class="cmt"># 权重和=1</span>
+     w_i ≤ max_weight              <span class="cmt"># 单股上限 30%</span>
+     |w_ind - w_ind_bench| ≤ <span class="num">0.05</span>  <span class="cmt"># 行业偏离 ±5%</span>
+     turnover(w, w_old) ≤ <span class="num">0.5</span>       <span class="cmt"># 换手率惩罚</span>
+     w_i ≥ <span class="num">0</span>                      <span class="cmt"># 非负</span>
+      </div>
+      <p><b>实现</b>：</p>
+      <ul>
+        <li><span class="pill pill-new">新建</span> <code>factor_lib/portfolio_optimizer.py</code></li>
+        <li>用 <code>scipy.optimize.minimize(method='SLSQP')</code> 凸优化求解</li>
+        <li>μ = 因子信号强度向量（IC-IR 加权后的预期收益）</li>
+        <li>行业基准权重 = 沪深300 行业占比（或全市场自然权重）</li>
+      </ul>
+      <p><b>与现有系统的关系</b>：</p>
+      <ul>
+        <li>保留 <code>portfolio_constructor.py</code>（等权方案）作为 fallback</li>
+        <li>新增优化器在 <code>multi_factor.py</code> 的 <code>combine()</code> 方法中作为可选 <code>method='mvo'</code></li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Step 3B -->
+  <div class="step">
+    <div class="step-header">
+      <span class="step-id">3B</span>
+      <span class="step-title">IC-IR 滚动衰减加权 — 替代全样本静态权重</span>
+      <span class="pill pill-mod">改造</span>
+    </div>
+    <div class="step-body">
+      <p><b>现状</b>：<code>multi_factor.py</code> 的 <code>icir_weighted</code> 方法用全样本 IC 均值/标准差，无衰减。</p>
+      <p><b>改造</b>：</p>
+      <div class="code">
+<span class="cmt"># 滚动 60 日 IC + 半衰期衰减</span>
+ic_weight = |icir_60d| × decay_factor
+decay_factor = exp(-ln(<span class="num">2</span>) × days_since / half_life)
+<span class="cmt"># half_life = 30 日（可配置）</span>
+
+<span class="cmt"># 当因子半衰期崩塌（IC 持续 < 0），自动压低权重</span>
+<span class="kw">if</span> rolling_ic_mean <span class="num">0</span>:
+    ic_weight = <span class="num">0</span>  <span class="cmt"># 自动清零，无需人工翻转</span>
+      </div>
+      <p><b>文件</b>：<span class="pill pill-mod">改造</span> <code>factor_lib/multi_factor.py</code> — 在 <code>_compute_weights()</code> 中新增滚动衰减逻辑</p>
+      <p><b>配置</b>：在 <code>config/multi_factor_202609.yaml</code> 中新增：</p>
+      <div class="code">
+ic_weighting:
+  window: <span class="num">60</span>          <span class="cmt"># 滚动窗口</span>
+  half_life: <span class="num">30</span>       <span class="cmt"># IC 半衰期</span>
+  min_ic: <span class="num">0.0</span>        <span class="cmt"># IC 低于此值权重清零</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 3C -->
+  <div class="step">
+    <div class="step-header">
+      <span class="step-id">3C</span>
+      <span class="step-title">策略降维为信号层 — 统一信号池 → 优化器</span>
+      <span class="pill pill-mod">改造</span>
+    </div>
+    <div class="step-body">
+      <p><b>目标</b>：不再让 scanner / EVO / MF202609 各自独立选股建仓，全部降维为基础因子信号向量，交由 3A 优化器统一求解。</p>
+      <p><b>实现路径</b>：</p>
+      <ul>
+        <li>将 scanner 的"画像分"、EVO 的 ML Rank 分数、MF202609 的排名平均分，统一抽象为 0~1 信号强度</li>
+        <li>新建 <code>factor_lib/signal_pool.py</code>，管理所有信号源 → 统一接口</li>
+        <li>优化器输入 = 信号池的加权合并向量</li>
+      </ul>
+      <p><b>注意</b>：现有模块不删除，保持可独立运行，信号池是"上层封装"</p>
+    </div>
+  </div>
+
+  <!-- Step 3D -->
+  <div class="step">
+    <div class="step-header">
+      <span class="step-id">3D</span>
+      <span class="step-title">流动性 + 截面离散度门控 — 条件化因子权重</span>
+      <span class="pill pill-new">新建</span> <span class="pill pill-res">四重共振核心</span>
+    </div>
+    <div class="step-body">
+      <p><b>目标</b>：补充现有 Regime 检测系统，加入流动性和截面离散度两个门控维度。</p>
+      <div class="code">
+<span class="cmt"># 门控 1: 市场流动性分层</span>
+market_turnover_percentile = percentile(total_market_amount, <span class="num">60</span>d)
+<span class="kw">if</span> market_turnover_percentile > <span class="num">0.7</span>:
+    momentum_weight *= <span class="num">1.3</span>  <span class="cmt"># 放量时动量更有效</span>
+<span class="kw">elif</span> market_turnover_percentile < <span class="num">0.3</span>:
+    reversal_weight *= <span class="num">1.3</span>  <span class="cmt"># 缩量时反转/防御更有效</span>
+
+<span class="cmt"># 门控 2: 截面离散度</span>
+cross_sectional_std = std(all_stock_returns_today)
+<span class="kw">if</span> cs_std > historical_p75:
+    stock_picking_weight = <span class="num">1.0</span>   <span class="cmt"># 分化大，选股 Alpha 丰厚</span>
+<span class="kw">elif</span> cs_std < historical_p25:
+    stock_picking_weight = <span class="num">0.5</span>   <span class="cmt"># 齐涨齐跌，压低选股权重</span>
+      </div>
+      <p><b>文件</b>：<span class="pill pill-new">新建</span> <code>factor_lib/regime_gate.py</code></p>
+      <p><b>与现有 Regime 系统的关系</b>：在 <code>regime_detector.py</code> 的 4 状态（Bull/Bear/Range/Dark）基础上，叠加两个连续门控变量，不替换原有逻辑。</p>
+
+      <div class="resonance-box">
+        <div class="label">四重共振 · 共振评分引擎</div>
+        <div class="content">这一步是四重共振的"合成引擎"——四维各算 0~1 分（截面排名归一化），共振强度 = w₁×筹码 + w₂×资金 + w₃×板块 + w₄×情绪。共振等级映射仓位：强共振 60-80%，中共振 30-50%，弱共振 10-20%，无共振 0-5%。文件 <code>factor_lib/resonance.py</code>。</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 3E -->
+  <div class="step">
+    <div class="step-header">
+      <span class="step-id">3E</span>
+      <span class="step-title">股票池分层 — 大盘看质量，小盘看流动性</span>
+      <span class="pill pill-new">新建</span>
+    </div>
+    <div class="step-body">
+      <p><b>目标</b>：放弃"一套因子通打全市场"，按市值分层独立跑因子。</p>
+      <table class="tbl">
+        <thead><tr><th>分层</th><th>范围</th><th>核心因子</th><th>逻辑</th></tr></thead>
+        <tbody>
+          <tr><td>大盘核心</td><td>沪深300</td><td>quality_score, surprise_earnings_gap</td><td>机构定价，质量/预期差更有效</td></tr>
+          <tr><td>中盘成长</td><td>中证500</td><td>动量 + 流动性 + 筹码</td><td>混合博弈，均衡配置</td></tr>
+          <tr><td>小盘博弈</td><td>中证1000/国证2000</td><td>amihud_illiq, overnight_return, reversal</td><td>散户参与度高，微观特征更有效</td></tr>
+        </tbody>
+      </table>
+      <p><b>实现</b>：在 <code>factor_lib/loader.py</code> 中新增 <code>stock_pool='hs300'|'zz500'|'zz1000'|'all'</code> 参数</p>
+    </div>
+  </div>
+
+  <!-- Step 3F -->
+  <div class="step">
+    <div class="step-header">
+      <span class="step-id">3F</span>
+      <span class="step-title">3 条卖出铁律 → 量化信号引擎</span>
+      <span class="pill pill-new">新建</span> <span class="pill pill-res">四重共振核心</span>
+    </div>
+    <div class="step-body">
+      <p><b>目标</b>：将"买股看共振，卖股看信号"落地为每日信号表。</p>
+      <table class="tbl">
+        <thead><tr><th>铁律</th><th>触发条件</th><th>信号</th><th>因子依赖</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>① 预期兑现 + 情绪高潮</td>
+            <td>surprise_earnings_gap 收敛 + sentiment_composite > 0.8</td>
+            <td>🔔 分批止盈</td>
+            <td>P2: sentiment_composite + 已有 surprise</td>
+          </tr>
+          <tr>
+            <td>② 板块弱化 + 资金流出</td>
+            <td>sector_strength 连续 3 日下降 + amihud_illiq 飙升</td>
+            <td>🔔 降仓</td>
+            <td>P2: sector_strength + amihud_illiq</td>
+          </tr>
+          <tr>
+            <td>③ 个股破位 + 共振消失</td>
+            <td>close < MA20 + 共振等级降至"无共振"</td>
+            <td>🔔 清仓</td>
+            <td>P3D: resonance_score</td>
+          </tr>
+        </tbody>
+      </table>
+      <p><b>文件</b>：</p>
+      <ul>
+        <li><span class="pill pill-new">新建</span> <code>web/backend/services/resonance_strategy.py</code> — 仓位 + 卖出信号服务</li>
+        <li><span class="pill pill-new">新建</span> <code>web/backend/routers/resonance.py</code> — API 路由</li>
+        <li><span class="pill pill-new">新建</span> <code>web/frontend/src/Resonance.jsx</code> — 前端看板（雷达图 + 仓位表 + 信号监控）</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════ Phase 4 ══════════════════ -->
+<div class="section">
+  <div class="phase-bar">
+    <div class="phase-num p4">4</div>
+    <div class="title">防过拟合加固 — 评价指标纠偏与交叉验证</div>
+    <div class="spacer"></div>
+    <div class="est">2-3 天 · 依赖 P3</div>
+  </div>
+
+  <!-- Step 4A -->
+  <div class="step">
+    <div class="step-header">
+      <span class="step-id">4A</span>
+      <span class="step-title">Purged Walk-Forward 交叉验证</span>
+      <span class="pill pill-mod">改造</span>
+    </div>
+    <div class="step-body">
+      <p><b>目标</b>：在训练/测试间插入 purge + embargo 区间，严格杜绝因子滚动窗口导致的未来数据渗漏。</p>
+      <div class="code">
+<span class="cmt"># Walk-Forward with Purging + Embargoing</span>
+<span class="cmt">#</span>
+<span class="cmt"># |--- train ---|--- purge ---|--- test ---|--- embargo ---|</span>
+<span class="cmt"># |   252 days  |  5 days    |   63 days  |   10 days     |</span>
+<span class="cmt">#</span>
+<span class="cmt"># purge = forward return period（防 train 的未来收益渗入 test）</span>
+<span class="cmt"># embargo = factor calculation window（防 test 的因子计算用到 train 数据）</span>
+      </div>
+      <p><b>文件</b>：<span class="pill pill-mod">改造</span> <code>factor_lib/anti_overfit.py</code> — 在现有 Walk-Forward 基础上插入 purge + embargo 区间</p>
+    </div>
+  </div>
+
+  <!-- Step 4B -->
+  <div class="step">
+    <div class="step-header">
+      <span class="step-id">4B</span>
+      <span class="step-title">IC 半衰期计算 + 衰减监控集成</span>
+      <span class="pill pill-new">新建</span>
+    </div>
+    <div class="step-body">
+      <p><b>目标</b>：对 IC 衰减曲线做指数拟合，量化因子衰减速度。</p>
+      <div class="code">
+<span class="cmt"># IC 半衰期: IC 从峰值衰减到一半所需的天数</span>
+ic_decay_curve = [ic_1d, ic_3d, ic_5d, ic_10d, ic_20d]
+
+<span class="cmt"># 指数拟合: ic(t) = ic_0 × exp(-t × ln(2) / half_life)</span>
+half_life = fit_exponential_decay(ic_decay_curve)
+
+<span class="cmt"># 判定:</span>
+<span class="cmt"># half_life < 3d  → 短命因子，仅做日内/隔夜信号</span>
+<span class="cmt"># half_life 3-10d → 中频因子，适合周度换仓</span>
+<span class="cmt"># half_life > 10d → 长效因子，适合月度持仓</span>
+      </div>
+      <p><b>文件</b>：<span class="pill pill-new">新建</span> 在 <code>factor_lib/ic_engine.py</code> 中新增 <code>compute_ic_half_life()</code> 函数</p>
+    </div>
+  </div>
+
+  <!-- Step 4C -->
+  <div class="step">
+    <div class="step-header">
+      <span class="step-id">4C</span>
+      <span class="step-title">三段 IC 审计从 scratch 提升为正式模块</span>
+      <span class="pill pill-mod">改造</span>
+    </div>
+    <div class="step-body">
+      <p><b>现状</b>：<code>scratch/audit_factor_direction.py</code> 已实现三段 IC 审计（全样本/基准期/近期），但在 scratch 目录，未集成到正式管线。</p>
+      <p><b>改造</b>：</p>
+      <ul>
+        <li>迁移到 <code>factor_lib/audit.py</code>（正式模块）</li>
+        <li>在因子测试 CLI <code>run_factor_test.py</code> 中新增 <code>--audit</code> 选项自动触发</li>
+        <li>输出：每个因子的 FLIP / WEAK / KEEP 判定 + 三段 IC 对比表</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Step 4D -->
+  <div class="step">
+    <div class="step-header">
+      <span class="step-id">4D</span>
+      <span class="step-title">共振信号回测验证</span>
+      <span class="pill pill-new">新建</span> <span class="pill pill-res">四重共振验证</span>
+    </div>
+    <div class="step-body">
+      <p><b>目标</b>：验证四重共振策略和 3 条卖出铁律的实战效果。</p>
+      <p><b>回测内容</b>：</p>
+      <ul>
+        <li>共振强组的后续 5/10/20 日收益是否显著高于弱组</li>
+        <li>3 条卖出信号触发后 5/10/20 日收益是否为负（信号有效性）</li>
+        <li>共振策略 vs 等权策略的 Sharpe / Calmar / MaxDD 对比</li>
+      </ul>
+      <p><b>文件</b>：<span class="pill pill-new">新建</span> <code>factor_lib/resonance_backtest.py</code></p>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════ 四重共振映射总表 ══════════════════ -->
+<div class="section">
+  <div class="section-title">四重共振 × 升级步骤 × 卖出铁律 映射总表</div>
+  <div class="section-desc">"买股看共振，卖股看信号"的完整落地路径</div>
+
+  <table class="tbl">
+    <thead>
+      <tr>
+        <th>共振维度</th>
+        <th>当前因子</th>
+        <th>升级后因子（P2）</th>
+        <th>纯净化（P1）</th>
+        <th>共振评分（P3D）</th>
+        <th>卖出信号</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="hl">🔥 筹码</td>
+        <td class="mono">chip_concentration<br>(均线偏离)</td>
+        <td class="mono">cyq_profit_ratio<br>cyq_upper_pressure</td>
+        <td>行业+市值中性化</td>
+        <td>筹码维 0~1 分</td>
+        <td>浮盈 > 0.85 → 抛压预警</td>
+      </tr>
+      <tr>
+        <td class="hl-cyan">💧 资金</td>
+        <td class="mono">vol_ratio<br>north_net_inflow_ratio</td>
+        <td class="mono">amihud_illiq<br>volume_skewness<br>gk_volatility</td>
+        <td>对称正交化</td>
+        <td>资金维 0~1 分</td>
+        <td>Amihud 飙升+偏度转负 → 铁律②降仓</td>
+      </tr>
+      <tr>
+        <td class="hl-green">🏗️ 板块</td>
+        <td class="mono">(无独立因子)<br>仅概览 API</td>
+        <td class="mono">sector_strength</td>
+        <td>行业虚拟变量剥离</td>
+        <td>板块维 0~1 分</td>
+        <td>连续 3 日下降 → 铁律②降仓</td>
+      </tr>
+      <tr>
+        <td class="hl-violet">🎭 情绪</td>
+        <td class="mono">text_sentiment_score<br>turnover_rate</td>
+        <td class="mono">sentiment_composite<br>overnight_return_5d</td>
+        <td>行业+市值中性化</td>
+        <td>情绪维 0~1 分</td>
+        <td>情绪 > 0.8 + 预期兑现 → 铁律①止盈</td>
+      </tr>
+      <tr>
+        <td colspan="5" style="text-align:right;font-weight:600;color:var(--amber)">共振等级 → 仓位映射</td>
+        <td>破位+无共振 → 铁律③清仓</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ══════════════════ 文件清单 ══════════════════ -->
+<div class="section">
+  <div class="section-title">新增/修改文件清单</div>
+
+  <table class="tbl">
+    <thead>
+      <tr><th>阶段</th><th>文件</th><th>类型</th><th>说明</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>P1</td><td class="mono">factor_lib/neutralizer.py</td><td><span class="pill pill-new">新建</span></td><td>因子中性化引擎</td></tr>
+      <tr><td>P1</td><td class="mono">factor_lib/orthogonalizer.py</td><td><span class="pill pill-new">新建</span></td><td>对称正交化</td></tr>
+      <tr><td>P1</td><td class="mono">factor_lib/ic_engine.py</td><td><span class="pill pill-mod">改造</span></td><td>新增 use_neutral 参数</td></tr>
+      <tr><td>P2</td><td class="mono">src/feature_engineering.py</td><td><span class="pill pill-mod">改造</span></td><td>新增 8 个高阶因子计算</td></tr>
+      <tr><td>P2</td><td class="mono">src/cyq_model.py</td><td><span class="pill pill-new">新建</span></td><td>CYQ 筹码分布模型</td></tr>
+      <tr><td>P2</td><td class="mono">src/sector_factor.py</td><td><span class="pill pill-new">新建</span></td><td>板块强度因子</td></tr>
+      <tr><td>P2</td><td class="mono">factor_lib/registry.py</td><td><span class="pill pill-mod">改造</span></td><td>注册 8 个新因子</td></tr>
+      <tr><td>P3</td><td class="mono">factor_lib/portfolio_optimizer.py</td><td><span class="pill pill-new">新建</span></td><td>MVO 凸优化器</td></tr>
+      <tr><td>P3</td><td class="mono">factor_lib/multi_factor.py</td><td><span class="pill pill-mod">改造</span></td><td>IC-IR 滚动衰减 + mvo 方法</td></tr>
+      <tr><td>P3</td><td class="mono">factor_lib/signal_pool.py</td><td><span class="pill pill-new">新建</span></td><td>统一信号池</td></tr>
+      <tr><td>P3</td><td class="mono">factor_lib/regime_gate.py</td><td><span class="pill pill-new">新建</span></td><td>流动性+离散度门控</td></tr>
+      <tr><td>P3</td><td class="mono">factor_lib/resonance.py</td><td><span class="pill pill-new">新建</span></td><td>四重共振评分引擎</td></tr>
+      <tr><td>P3</td><td class="mono">web/backend/services/resonance_strategy.py</td><td><span class="pill pill-new">新建</span></td><td>仓位+卖出信号服务</td></tr>
+      <tr><td>P3</td><td class="mono">web/backend/routers/resonance.py</td><td><span class="pill pill-new">新建</span></td><td>共振 API 路由</td></tr>
+      <tr><td>P3</td><td class="mono">web/frontend/src/Resonance.jsx</td><td><span class="pill pill-new">新建</span></td><td>共振看板前端</td></tr>
+      <tr><td>P3</td><td class="mono">config/resonance.yaml</td><td><span class="pill pill-new">新建</span></td><td>四维权重+仓位映射+卖出阈值</td></tr>
+      <tr><td>P4</td><td class="mono">factor_lib/anti_overfit.py</td><td><span class="pill pill-mod">改造</span></td><td>Purge + Embargo</td></tr>
+      <tr><td>P4</td><td class="mono">factor_lib/audit.py</td><td><span class="pill pill-new">新建</span></td><td>三段审计正式模块</td></tr>
+      <tr><td>P4</td><td class="mono">factor_lib/resonance_backtest.py</td><td><span class="pill pill-new">新建</span></td><td>共振策略回测</td></tr>
+    </tbody>
+  </table>
+
+  <div class="divider"></div>
+
+  <p style="color:var(--text3);font-size:13px;text-align:center;">
+    Base: tag v3.0 · Target: v3.1 · 零侵入平行层 · 删除即回滚
+  </p>
+</div>
+
+</div>
+</body>
+</html>

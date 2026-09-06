@@ -844,6 +844,22 @@ except Exception as _mf_exc:
     )
 
 
+# 四重共振策略路由（平行层，零侵入）
+# ═══════════════════════════════════════════════════════════
+try:
+    from routers import resonance_router
+    app.include_router(resonance_router)
+    import logging as _res_logging
+    _res_logging.getLogger(__name__).info(
+        "✅ [Resonance] 四重共振策略路由已挂载：/api/resonance/*（平行层，经典路由不受影响）"
+    )
+except Exception as _res_exc:
+    import logging as _res_logging2
+    _res_logging2.getLogger(__name__).warning(
+        f"⚠️ [Resonance] 四重共振策略路由挂载失败（经典系统照常运行）：{_res_exc}"
+    )
+
+
 # ══════════════════════════════════════════════════════════════════
 # 生产环境：托管前端静态文件（dist）—— 必须放在所有 API 路由之后
 # 当 web/frontend/dist 存在时，将其作为 SPA 静态资源挂载，

@@ -1,17 +1,20 @@
 # -*- coding: utf-8 -*-
 """
-feature_engineering.py —— 全历史特征因子计算工程 (含 8 个额外实验因子版)
+feature_engineering.py —— 全历史特征因子计算工程 (P2 高级因子版)
 ========================================================================
 1. 高效 SQL 提取 2020-2026 行情与主力资金。
-2. 批量计算 18 个核心因子 + 8 个实验因子，总计 26 个因子：
+2. 批量计算核心因子 + P2 高级因子（2D CYQ筹码 / 2E 板块强度 / 2F 情绪复合）：
    - 动量/反转: return_5d, return_20d, return_60d, excess_return_20d + [实验] return_10d, return_120d
    - 波动率/风险: volatility_20d, volatility_60d, skewness_20d, max_drawdown_20d, atr_ratio + [实验] volatility_10d, volatility_120d, max_drawdown_60d
    - 估值/质量: pe_ttm, pb, roe, turnover_rate + [实验] turnover_rate_5d, turnover_rate_20d
    - 聪明钱/微观: north_net_inflow_ratio, profit_ratio_estimate, chip_concentration + [实验] vol_ratio
+   - P2 数学类: 隔夜/日内分离、流动性高阶、GK波动率（2A/2B/2C）
+   - P2 高级类: CYQ筹码模型(2D)、板块强度(2E)、情绪复合(2F)
 3. 因子写入 factor_values 表，覆盖式保存。
 """
 
 import os
+import sys
 import sqlite3
 import pandas as pd
 import numpy as np
@@ -20,6 +23,11 @@ import time
 from config.paths import PATHS, startup_check
 
 startup_check()
+
+# 确保 src 目录在 import 路径中（用于导入 cyq_model, sector_factor）
+_src_dir = os.path.dirname(os.path.abspath(__file__))
+if _src_dir not in sys.path:
+    sys.path.insert(0, _src_dir)
 
 def calculate_stock_factors(db_path=None):
     if db_path is None:
@@ -39,10 +47,13 @@ def calculate_stock_factors(db_path=None):
         SELECT 
             p.ts_code, 
             p.trade_date, 
+            p.open,
             p.high, 
             p.low, 
             p.close, 
+            p.pct_chg,
             p.vol,
+            p.amount,
             -- 重要说明：Tushare pro.daily() 返回的 close/high/low 默认已经是
             -- 前复权价(adj='qfq')，历史除权除息已调整完毕，价格序列天然连续。
             -- 因此这里不再乘 adj_factor（后复权因子），避免 stk_factor 某日
@@ -215,7 +226,144 @@ def calculate_stock_factors(db_path=None):
     # 清理临时 rank 列
     _tmp_cols = [c for c in df.columns if c.startswith("_r_") or c.startswith("_hm_") or c.startswith("_sc_") or c.startswith("_mf_")]
     df.drop(columns=_tmp_cols, inplace=True, errors="ignore")
-    
+
+    # 10. P2 数学类新因子 (2A 隔夜/日内 + 2B 流动性高阶 + 2C GK 波动率)
+    print("ℹ️ [Feature] 计算 P2 数学类新因子（隔夜/日内分离 / 流动性高阶 / GK波动率）...")
+
+    # --- 2A: 隔夜收益与日内收益分离 ---
+    df["overnight_return"] = df["open"] / gb["close"].shift(1).to_numpy() - 1
+    df["intraday_return"] = df["close"] / df["open"] - 1
+    df["overnight_return_5d"] = gb["overnight_return"].rolling(5).mean().to_numpy()
+    df["intraday_return_5d"] = gb["intraday_return"].rolling(5).mean().to_numpy()
+    df["overnight_intraday_gap_5d"] = df["overnight_return_5d"] - df["intraday_return_5d"]
+
+    # --- 2B: Amihud 非流动性 + 成交额波动率 + 成交量偏度 ---
+    amount_safe = df["amount"].replace(0, np.nan)
+    df["_amihud_daily"] = df["daily_ret"].abs() / amount_safe
+    df["amihud_illiq_20d"] = gb["_amihud_daily"].rolling(20).mean().to_numpy()
+
+    df["turnover_volatility_20d"] = gb["turnover_rate"].rolling(20).std().to_numpy()
+    df["volume_skewness_20d"] = gb["vol"].rolling(20).skew().to_numpy()
+
+    _amount_std = gb["amount"].rolling(20).std().to_numpy()
+    _amount_mean = gb["amount"].rolling(20).mean().to_numpy()
+    df["amount_volatility_20d"] = _amount_std / np.where(_amount_mean > 1e-8, _amount_mean, np.nan)
+
+    # --- 2C: Garman-Klass 高阶波动率 + Parkinson 波动率 ---
+    H = df["high"].replace(0, np.nan)
+    L = df["low"].replace(0, np.nan)
+    O = df["open"].replace(0, np.nan)
+    C = df["close"]
+
+    _gk_var = 0.5 * (np.log(H / L)) ** 2 - (2 * np.log(2) - 1) * (np.log(C / O)) ** 2
+    _gk_var = _gk_var.clip(lower=0)   # 理论上可能为负，截断保护
+    df["_gk_var"] = _gk_var
+    df["gk_volatility_20d"] = np.sqrt(gb["_gk_var"].rolling(20).mean().to_numpy()) * np.sqrt(252)
+
+    _park_var = (np.log(H / L)) ** 2 / (4 * np.log(2))
+    df["_park_var"] = _park_var
+    df["parkinson_volatility_20d"] = np.sqrt(gb["_park_var"].rolling(20).mean().to_numpy()) * np.sqrt(252)
+
+    # 清理 P2 临时列
+    _p2_tmp = ["overnight_return", "intraday_return", "_amihud_daily", "_gk_var", "_park_var"]
+    df.drop(columns=_p2_tmp, inplace=True, errors="ignore")
+
+    # 11. P2 高级因子（2D CYQ 筹码模型 + 2E 板块强度 + 2F 情绪复合）
+    print("ℹ️ [Feature] 计算 P2 高级因子（CYQ筹码 / 板块强度 / 情绪复合）...")
+
+    # --- 2D: CYQ 筹码分布模型（每只股票独立滚动计算）---
+    print("ℹ️ [Feature]   2D-CYQ 筹码分布模型计算中（窗口60天，50个价格格）...")
+    from cyq_model import CYQModel
+    _cyq_model = CYQModel(window=60, decay_lambda=0.05)
+    _cyq_results = []
+    for _code, _grp in df.groupby("ts_code", sort=False):
+        _grp_sorted = _grp.sort_values("trade_date")
+        _res = _cyq_model.compute_rolling(_grp_sorted)
+        _res.index = _grp_sorted.index
+        _cyq_results.append(_res)
+    _cyq_df = pd.concat(_cyq_results).sort_index()
+
+    # 计算当前价相对平均成本的偏离
+    df["cyq_profit_ratio_60d"] = _cyq_df["cyq_profit_ratio"]
+    df["cyq_upper_pressure_60d"] = _cyq_df["cyq_upper_pressure"]
+    df["cyq_chip_concentration_60d"] = _cyq_df["cyq_chip_concentration"]
+    df["cyq_avg_cost_dev_60d"] = (
+        (df["close"] - _cyq_df["cyq_avg_cost"]) / _cyq_df["cyq_avg_cost"].replace(0, np.nan)
+    )
+
+    # --- 2E: 板块强度因子（需要全市场截面 + stock_list 行业信息）---
+    print("ℹ️ [Feature]   2E-板块强度因子计算中（按行业截面合成）...")
+    try:
+        # 读取 stock_list 行业信息
+        _stock_info = pd.read_sql(
+            "SELECT ts_code, industry FROM stock_list WHERE industry IS NOT NULL",
+            conn
+        )
+        if len(_stock_info) > 0:
+            from sector_factor import SectorFactor
+            _sf = SectorFactor()
+            _sector_strength_map = {}  # (trade_date, ts_code) -> value
+
+            for _td, _day_df in df.groupby("trade_date", sort=False):
+                _day_strength = _sf.compute_sector_strength(_day_df, _stock_info)
+                for _ts_code, _val in _day_strength.items():
+                    _sector_strength_map[(_td, _ts_code)] = _val
+
+            # 映射回主 DataFrame
+            df["_ss_key"] = list(zip(df["trade_date"], df["ts_code"]))
+            df["sector_strength"] = df["_ss_key"].map(_sector_strength_map)
+            df.drop(columns=["_ss_key"], inplace=True, errors="ignore")
+        else:
+            df["sector_strength"] = np.nan
+            print("⚠️ [Feature]   stock_list 无行业数据，板块强度因子设为 NaN")
+    except Exception as _e:
+        df["sector_strength"] = np.nan
+        print(f"⚠️ [Feature]   板块强度计算异常: {_e}，跳过")
+
+    # --- 2F: 情绪复合因子（换手率分位 + 隔夜波动幅度 + 连续上涨天数）---
+    print("ℹ️ [Feature]   2F-情绪复合因子计算中...")
+    # 成分 1: 60日换手率分位（时序 rank）
+    df["_turnover_pct_60d"] = df.groupby("ts_code")["turnover_rate"].transform(
+        lambda x: x.rolling(60, min_periods=10).rank(pct=True)
+    )
+
+    # 成分 2: 隔夜波动幅度（|隔夜收益|的5日均值）
+    _overnight_ret = df["open"] / df.groupby("ts_code")["close"].shift(1).to_numpy() - 1
+    df["_abs_overnight_5d"] = np.abs(_overnight_ret)
+    df["_abs_overnight_5d"] = df.groupby("ts_code")["_abs_overnight_5d"].transform(
+        lambda x: x.rolling(5).mean()
+    )
+
+    # 成分 3: 连续上涨天数
+    def _consecutive_up(series):
+        is_up = series > 0
+        # 连续上涨计数：遇到下跌重置为 0
+        streak = (is_up.groupby((~is_up).cumsum()).cumcount() + 1) * is_up.astype(int)
+        return streak
+
+    df["_pct_change_daily"] = df.groupby("ts_code")["close"].pct_change()
+    df["_consec_up_days"] = df.groupby("ts_code")["_pct_change_daily"].transform(
+        _consecutive_up
+    )
+
+    # 截面 rank 归一化 + 加权合成
+    df["_r_turnover_pct"] = df.groupby("trade_date")["_turnover_pct_60d"].rank(pct=True)
+    df["_r_overnight_abs"] = df.groupby("trade_date")["_abs_overnight_5d"].rank(pct=True)
+    df["_r_consec_up"] = df.groupby("trade_date")["_consec_up_days"].rank(pct=True)
+
+    df["sentiment_composite"] = (
+        df["_r_turnover_pct"].fillna(0.5) * 0.4
+        + df["_r_overnight_abs"].fillna(0.5) * 0.3
+        + df["_r_consec_up"].fillna(0.5) * 0.3
+    )
+
+    # 清理 P2 高级因子临时列
+    _p2_adv_tmp = [
+        "_turnover_pct_60d", "_abs_overnight_5d", "_consec_up_days",
+        "_pct_change_daily", "_r_turnover_pct", "_r_overnight_abs", "_r_consec_up"
+    ]
+    df.drop(columns=_p2_adv_tmp, inplace=True, errors="ignore")
+
     # --- 整理与保存 ---
     print("ℹ️ [Feature] 特征计算完成，正在过滤 NaN 行并持久化...")
     df = df.rename(columns={"ts_code": "stock_code"})
@@ -233,7 +381,16 @@ def calculate_stock_factors(db_path=None):
         # 新增的防御与风控因子
         "beta_60d", "quality_score", "low_turnover_flag", "timeliness_decay",
         # 三维资金信号复合因子
-        "hot_money_score", "strong_control_score", "main_force_score"
+        "hot_money_score", "strong_control_score", "main_force_score",
+        # P2 数学类新因子 (2A / 2B / 2C)
+        "overnight_return_5d", "intraday_return_5d", "overnight_intraday_gap_5d",
+        "amihud_illiq_20d", "turnover_volatility_20d", "volume_skewness_20d", "amount_volatility_20d",
+        "gk_volatility_20d", "parkinson_volatility_20d",
+        # P2 高级因子 (2D CYQ 筹码 / 2E 板块强度 / 2F 情绪复合)
+        "cyq_profit_ratio_60d", "cyq_upper_pressure_60d",
+        "cyq_chip_concentration_60d", "cyq_avg_cost_dev_60d",
+        "sector_strength",
+        "sentiment_composite",
     ]
 
     # 关键：策略核心只消费 return_5/10/20d、volatility_20/60d、turnover_20d、三维资金复合分、quality；
@@ -288,12 +445,191 @@ def calculate_stock_factors(db_path=None):
         logging.getLogger(__name__).warning(f"[Feature] 索引创建跳过: {e}")
         
     latest_date = df_clean['trade_date'].max()
-    print(f"🎉 [Feature] 因子特征工程成功入库！最新因子交易日: {latest_date}，共 {len(df_clean)} 条记录。")
+    print(f"✅ [Feature] 因子特征工程成功入库！最新因子交易日: {latest_date}，共 {len(df_clean)} 条记录。")
     conn.close()
     
     total_time = time.time() - start_time
-    print(f"✅ [Feature] 26 维复合因子成功写入 SQLite 表 [{table_name}]，共 {len(df_clean)} 行数据，总耗时: {total_time:.2f} 秒。")
+    _n_factors = len(cols_to_save) - 2  # 减去 trade_date 和 stock_code
+    print(f"✅ [Feature] {_n_factors} 维复合因子成功写入 SQLite 表 [{table_name}]，共 {len(df_clean)} 行数据，总耗时: {total_time:.2f} 秒。")
     return df_clean
+
+
+# ═══════════════════════════════════════════════════════════════
+#  P2 阶段数学类新因子 (2A / 2B / 2C)
+# ═══════════════════════════════════════════════════════════════
+
+def calc_overnight_intraday_factors(df):
+    """
+    任务 2A：隔夜收益与日内收益分离
+    输入 df: 单只股票的日线 DataFrame（需含 open, close 列）
+    返回: 包含 overnight_return_5d, intraday_return_5d, overnight_intraday_gap_5d 的 DataFrame
+    """
+    overnight_return = df["open"] / df["close"].shift(1) - 1
+    intraday_return = df["close"] / df["open"] - 1
+    overnight_return_5d = overnight_return.rolling(5).mean()
+    intraday_return_5d = intraday_return.rolling(5).mean()
+    overnight_intraday_gap_5d = overnight_return_5d - intraday_return_5d
+
+    return pd.DataFrame({
+        "overnight_return_5d": overnight_return_5d,
+        "intraday_return_5d": intraday_return_5d,
+        "overnight_intraday_gap_5d": overnight_intraday_gap_5d,
+    }, index=df.index)
+
+
+def calc_liquidity_higher_order_factors(df):
+    """
+    任务 2B：Amihud 非流动性 + 成交额波动率 + 成交量偏度
+    输入 df: 单只股票的日线 DataFrame（需含 close, amount, vol, turnover_rate 列）
+    返回: 包含 amihud_illiq_20d, turnover_volatility_20d, volume_skewness_20d, amount_volatility_20d 的 DataFrame
+    """
+    daily_ret = df["close"].pct_change()
+
+    # Amihud 非流动性：|日收益| / 成交额，除零保护
+    amount_safe = df["amount"].apply(lambda x: x if x > 1e-4 else np.nan)
+    amihud_illiq_20d = (daily_ret.abs() / amount_safe).rolling(20).mean()
+
+    # 换手率波动率
+    turnover_volatility_20d = df["turnover_rate"].rolling(20).std()
+
+    # 成交量偏度
+    volume_skewness_20d = df["vol"].rolling(20).skew()
+
+    # 成交额变异系数（波动率/均值）
+    amount_std_20d = df["amount"].rolling(20).std()
+    amount_mean_20d = df["amount"].rolling(20).mean()
+    amount_volatility_20d = amount_std_20d / amount_mean_20d.replace(0, np.nan)
+
+    return pd.DataFrame({
+        "amihud_illiq_20d": amihud_illiq_20d,
+        "turnover_volatility_20d": turnover_volatility_20d,
+        "volume_skewness_20d": volume_skewness_20d,
+        "amount_volatility_20d": amount_volatility_20d,
+    }, index=df.index)
+
+
+def calc_gk_volatility(df):
+    """
+    任务 2C：Garman-Klass 高阶波动率 + Parkinson 波动率
+    输入 df: 单只股票的日线 DataFrame（需含 open, high, low, close 列）
+    返回: 包含 gk_volatility_20d, parkinson_volatility_20d 的 DataFrame（年化）
+    """
+    H = df["high"]
+    L = df["low"]
+    C = df["close"]
+    O = df["open"]
+
+    # 除零保护：极端情况高低价或开盘价为 0
+    H = H.replace(0, np.nan)
+    L = L.replace(0, np.nan)
+    O = O.replace(0, np.nan)
+
+    # Garman-Klass 单日方差
+    sigma2_gk = 0.5 * (np.log(H / L)) ** 2 - (2 * np.log(2) - 1) * (np.log(C / O)) ** 2
+    # GK 估计量理论上可能为负（极端价格路径），做截断保护
+    sigma2_gk = sigma2_gk.clip(lower=0)
+
+    # 滚动 20 日 GK 波动率（年化，乘 sqrt(252)）
+    gk_volatility_20d = np.sqrt(sigma2_gk.rolling(20).mean()) * np.sqrt(252)
+
+    # Parkinson 波动率（只用 H/L）
+    parkinson_var = (np.log(H / L)) ** 2 / (4 * np.log(2))
+    parkinson_volatility_20d = np.sqrt(parkinson_var.rolling(20).mean()) * np.sqrt(252)
+
+    return pd.DataFrame({
+        "gk_volatility_20d": gk_volatility_20d,
+        "parkinson_volatility_20d": parkinson_volatility_20d,
+    }, index=df.index)
+
+
+# ═══════════════════════════════════════════════════════════════
+#  P2 阶段高级因子 (2D CYQ 筹码 / 2E 板块强度 / 2F 情绪复合)
+# ═══════════════════════════════════════════════════════════════
+
+def calc_cyq_factors(df):
+    """
+    任务 2D：CYQ 筹码分布模型（单只股票）
+    输入 df: 单只股票的日线 DataFrame（需含 high, low, close, turnover_rate 列）
+    返回: 包含 cyq_profit_ratio_60d, cyq_upper_pressure_60d,
+          cyq_chip_concentration_60d, cyq_avg_cost_dev_60d 的 DataFrame
+    """
+    from cyq_model import CYQModel
+    model = CYQModel(window=60, decay_lambda=0.05)
+    res = model.compute_rolling(df)
+
+    # 计算当前价相对平均成本的偏离
+    avg_cost = res["cyq_avg_cost"]
+    avg_cost_dev = (df["close"] - avg_cost) / avg_cost.replace(0, np.nan)
+
+    return pd.DataFrame({
+        "cyq_profit_ratio_60d": res["cyq_profit_ratio"],
+        "cyq_upper_pressure_60d": res["cyq_upper_pressure"],
+        "cyq_chip_concentration_60d": res["cyq_chip_concentration"],
+        "cyq_avg_cost_dev_60d": avg_cost_dev,
+    }, index=df.index)
+
+
+def calc_sector_strength_factor(daily_data, stock_info_df):
+    """
+    任务 2E：板块强度因子（单交易日全市场数据）
+    输入 daily_data: 某交易日全市场日线 DataFrame（ts_code, close, pct_chg, amount）
+    输入 stock_info_df: stock_list 表的 DataFrame（ts_code, industry）
+    返回: Series (index=ts_code, value=sector_strength)
+    """
+    from sector_factor import SectorFactor
+    sf = SectorFactor()
+    return sf.compute_sector_strength(daily_data, stock_info_df)
+
+
+def calc_sentiment_composite(df, text_sentiment=None):
+    """
+    任务 2F：情绪复合因子（单只股票时序 + 可选截面数据）
+    输入 df: 单只股票的日线 DataFrame（需含 close, open, turnover_rate 列）
+    输入 text_sentiment: 可选，文本情绪得分 Series（与 df 同索引）
+    返回: 包含 sentiment_composite 列的 DataFrame
+
+    合成逻辑：
+    - 成分 1: 60日换手率分位（时序 rank）
+    - 成分 2: |隔夜收益| 的 5 日均值
+    - 成分 3: 连续上涨天数
+    - 权重: 0.4 + 0.3 + 0.3 = 1.0
+    - 若有 text_sentiment，再加 0.2 权重（总权重归一化到 1.0）
+    """
+    # 成分 1: 60日换手率分位
+    turnover_pct = df["turnover_rate"].rolling(60, min_periods=10).rank(pct=True)
+
+    # 成分 2: 隔夜波动幅度（|隔夜收益|的5日均值）
+    overnight_ret = df["open"] / df["close"].shift(1) - 1
+    abs_overnight_5d = np.abs(overnight_ret).rolling(5).mean()
+
+    # 成分 3: 连续上涨天数
+    daily_ret = df["close"].pct_change()
+    is_up = daily_ret > 0
+    consec_up = (is_up.groupby((~is_up).cumsum()).cumcount() + 1) * is_up.astype(int)
+
+    # 截面 rank 归一化（这里是单只股票的时序数据，所以用自身排名近似）
+    # 注意：在主管线中使用的是截面 rank，这里单股计算用时序 rank 做近似
+    r_turnover = turnover_pct.rank(pct=True)
+    r_overnight = abs_overnight_5d.rank(pct=True)
+    r_consec = consec_up.rank(pct=True)
+
+    sentiment = (
+        r_turnover.fillna(0.5) * 0.4
+        + r_overnight.fillna(0.5) * 0.3
+        + r_consec.fillna(0.5) * 0.3
+    )
+
+    # 如果有文本情绪数据，加入额外权重（总权重归一化）
+    if text_sentiment is not None and len(text_sentiment) > 0:
+        r_text = text_sentiment.rank(pct=True)
+        sentiment = (
+            sentiment * 0.8 + r_text.fillna(0.5) * 0.2
+        )
+
+    return pd.DataFrame({
+        "sentiment_composite": sentiment,
+    }, index=df.index)
+
 
 if __name__ == "__main__":
     calculate_stock_factors()

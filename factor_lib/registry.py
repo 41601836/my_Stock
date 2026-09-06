@@ -53,6 +53,13 @@ _FACTOR_LIST: List[FactorMeta] = [
                "60日最大回撤", "中长期回撤控制"),
     FactorMeta("atr_ratio", -1, "波动率", "factor_values",
                "ATR(14)/收盘价", "波动幅度比率，越低越稳"),
+    # P2-2C: 高阶波动率 (2)
+    FactorMeta("gk_volatility_20d", -1, "波动率", "factor_values",
+               "20日Garman-Klass波动率（年化）",
+               "基于OHLC的高阶波动率估计，比收盘波动率更精确，波动高=风险大"),
+    FactorMeta("parkinson_volatility_20d", -1, "波动率", "factor_values",
+               "20日Parkinson波动率（年化）",
+               "仅用高低价的波动率估计，备用对比，波动高=风险大"),
 
     # ═══════════ 估值/质量 (3) ═══════════
     FactorMeta("pe_ttm", -1, "估值", "factor_values",
@@ -69,6 +76,19 @@ _FACTOR_LIST: List[FactorMeta] = [
                "5日平均换手率", "短期流动性代理"),
     FactorMeta("turnover_rate_20d", -1, "流动性", "factor_values",
                "20日平均换手率", "中期流动性代理"),
+    # P2-2B: 流动性高阶因子 (4)
+    FactorMeta("amihud_illiq_20d", -1, "流动性", "factor_values",
+               "20日Amihud非流动性比率",
+               "|日收益|/成交额的均值，非流动性越高，冲击成本越高，反向"),
+    FactorMeta("turnover_volatility_20d", -1, "流动性", "factor_values",
+               "20日换手率标准差",
+               "换手波动大代表筹码松动，资金分歧大，反向"),
+    FactorMeta("volume_skewness_20d", +1, "流动性", "factor_values",
+               "20日成交量偏度",
+               "正偏意味着放量上涨居多，量价配合好，正向"),
+    FactorMeta("amount_volatility_20d", -1, "流动性", "factor_values",
+               "20日成交额变异系数（std/mean）",
+               "成交额波动大代表多空分歧大，反向"),
 
     # ═══════════ 聪明钱/微观 (4) ═══════════
     FactorMeta("north_net_inflow_ratio", +1, "聪明钱", "factor_values",
@@ -81,6 +101,41 @@ _FACTOR_LIST: List[FactorMeta] = [
                "量比(5日均量/60日均量)",
                "2026-09-03 三段IC审计翻转(+1→-1)：全样本/基准期/近期 RankIC 全负(-0.049/-0.045/-0.060)，"
                "|ICIR| 0.40~0.54 均≥0.30；放量股未来5日显著跑输（天量见顶/低量溢价）"),
+
+    # ═══════════ 情绪 (3) — P2-2A 隔夜/日内收益分离 ═══════════
+    FactorMeta("overnight_return_5d", -1, "情绪", "factor_values",
+               "5日平均隔夜收益率（开盘/昨收-1）",
+               "隔夜跳空高代表散户情绪过热，反向因子"),
+    FactorMeta("intraday_return_5d", +1, "情绪", "factor_values",
+               "5日平均日内收益率（收盘/开盘-1）",
+               "日内动量代表机构主导方向，正向因子"),
+    FactorMeta("overnight_intraday_gap_5d", -1, "情绪", "factor_values",
+               "5日隔夜收益-日内收益之差",
+               "差值越大说明散户越主导（隔夜情绪化），反向因子"),
+
+    # ═══════════ 筹码 (4) — P2-2D CYQ 筹码分布模型 ═══════════
+    FactorMeta("cyq_profit_ratio_60d", -1, "筹码", "factor_values",
+               "CYQ浮盈比例（60日窗口）",
+               "当前价以下筹码占比，浮盈比例高=抛压大，反向因子"),
+    FactorMeta("cyq_upper_pressure_60d", -1, "筹码", "factor_values",
+               "CYQ上方抛压（60日窗口）",
+               "当前价以上套牢盘占比，套牢盘多=阻力大，反向因子"),
+    FactorMeta("cyq_chip_concentration_60d", +1, "筹码", "factor_values",
+               "CYQ筹码集中度（±10%价格区间，60日窗口）",
+               "筹码集中代表庄家控盘程度高，正向因子"),
+    FactorMeta("cyq_avg_cost_dev_60d", -1, "筹码", "factor_values",
+               "CYQ当前价相对平均成本偏离率（60日窗口）",
+               "偏离成本太远=风险高，反向因子"),
+
+    # ═══════════ 板块 (1) — P2-2E 板块强度 ═══════════
+    FactorMeta("sector_strength", +1, "板块", "factor_values",
+               "板块强度（收益+宽度+成交额合成）",
+               "板块强则个股大概率跟随，正向因子"),
+
+    # ═══════════ 情绪 (1) — P2-2F 情绪复合 ═══════════
+    FactorMeta("sentiment_composite", -1, "情绪", "factor_values",
+               "情绪复合因子（换手分位+隔夜波动+连涨天数）",
+               "情绪越高亢=风险越大，反向因子（A 股情绪过热见顶效应）"),
 
     # ═══════════ 防御 (4) ═══════════
     FactorMeta("beta_60d", -1, "防御", "factor_values",

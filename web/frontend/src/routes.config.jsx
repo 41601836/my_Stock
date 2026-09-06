@@ -16,6 +16,7 @@
 import {
   LayoutDashboard, Globe, ScanSearch, FileSearch, Activity,
   Target, Zap, TrendingUp, BarChart3, Trophy, Terminal, Medal, Sparkles, Layers,
+  Radio,
 } from 'lucide-react'
 import Dashboard from './Dashboard'
 import Overview from './Overview'
@@ -41,6 +42,7 @@ import Logs from './Logs'
 import WinRateHunter from './WinRateHunter'
 import FactorLibrary from './FactorLibrary'
 import MultiFactor202609 from './MultiFactor202609'
+import Resonance from './Resonance'
 
 // 侧边栏分组（顺序即展示顺序；折叠状态持久化在 localStorage 'nav_groups_collapsed'）
 export const NAV_GROUPS = [
@@ -98,6 +100,8 @@ export const ROUTES = [
   { path: '/factor-lib',  label: '因子有效性分析', title: '因子有效性分析',       group: 'system', Icon: Sparkles, Component: FactorLibrary },
   // MF202609 多因子分析（平行层，删除本行 + MultiFactor202609.jsx 即回滚）
   { path: '/mf202609',    label: '202609多因子分析', title: '202609多因子分析',   group: 'system', Icon: Layers, Component: MultiFactor202609 },
+  // 四维选股 · 四重共振策略（平行层，删除本行 + Resonance.jsx 即回滚）
+  { path: '/resonance',   label: '四维选股共振',    title: '四维选股·四重共振策略', group: 'system', Icon: Radio, Component: Resonance },
 ]
 
 // 顶栏页面标题解析：支持嵌套 children（Tab 子页）与 redirect 项

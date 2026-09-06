@@ -1,0 +1,134 @@
+# 四重共振策略配置
+# ============================================================
+# 四个维度：筹码 / 资金 / 板块 / 情绪
+# 每个维度内因子先方向对齐 → 截面排名归一化 → 加权求和 → 维度分
+# 四维按 dimension_weights 加权 → 共振总分 → 等级判定
+#
+# 零侵入原则：本配置仅被 resonance / signal_pool 模块读取，
+# 不影响经典扫描器、EVO 层、MF202609 等其他模块。
+
+model_name: "四重共振策略"
+model_version: "1.0.0"
+
+# ── 四维因子配置 ──────────────────────────
+# 每个维度按顺序尝试因子，第一个存在且非空的生效（支持回退）
+# 新因子逐步替换旧因子，不阻塞功能
+dimensions:
+  chip:
+    factors:
+      - "cyq_chip_concentration_60d"   # 优先：CYQ筹码集中度（新，高阶）
+      - "chip_concentration"          # 回退：均线偏离筹码集中度（已有）
+    weights:
+      - 1.0
+      - 1.0
+    label: "筹码"
+
+  capital:
+    factors:
+      - "amihud_illiq_20d"            # 优先：Amihud非流动性（新，高阶）
+      - "vol_ratio"                   # 回退：量比（已有）
+      - "north_net_inflow_ratio"      # 辅助：北向资金流入（已有）
+    weights:
+      - 0.6
+      - 0.6
+      - 0.4
+    label: "资金"
+
+  sector:
+    factors:
+      - "sector_strength"             # 优先：板块强度因子（新，截面计算）
+    weights:
+      - 1.0
+    label: "板块"
+
+  sentiment:
+    factors:
+      - "sentiment_composite"         # 优先：情绪复合因子（新，高阶）
+      - "turnover_rate"               # 回退：换手率（已有，情绪代理）
+    weights:
+      - 1.0
+      - 1.0
+    label: "情绪"
+
+# ── 维度间权重 ────────────────────────────
+dimension_weights:
+  chip: 0.30
+  capital: 0.25
+  sector: 0.25
+  sentiment: 0.20
+
+# ── 共振等级阈值 ──────────────────────────
+# strong:  总分 >= strong 且 至少3维 >= 0.6
+# medium:  总分 >= medium 且 至少2维 >= 0.6
+# weak:    总分 >= weak   且 至少1维 >= 0.6
+# none:    其他
+resonance_thresholds:
+  strong: 0.70
+  medium: 0.50
+  weak: 0.30
+
+# ── 仓位映射（建议仓位区间） ──────────────
+position_mapping:
+  strong: [0.6, 0.8]   # 强共振：重仓
+  medium: [0.3, 0.5]   # 中共振：中等仓位
+  weak: [0.1, 0.2]     # 弱共振：轻仓
+  none: [0.0, 0.05]    # 无共振：空仓或极轻仓
+
+# ── 信号池配置 ────────────────────────────
+signal_pool:
+  signals:
+    - name: "mf202609_rank"
+      source: "builtin"
+      weight: 0.4
+    - name: "resonance_score"
+      source: "builtin"
+      weight: 0.4
+    - name: "evo_ml_score"
+      source: "builtin"
+      weight: 0.2
+
+# ── 股票池分层 ────────────────────────────
+stock_pool:
+  # 优先使用指数成分表，否则用市值分位数近似
+  use_index_components: true
+  # 市值分位数近似阈值（当无指数成分数据时使用）
+  market_cap_quantiles:
+    large: 0.06     # 前 6% = 大盘
+    mid: 0.16       # 6%~16% = 中盘
+    small: 0.36     # 16%~36% = 小盘
+    micro: 1.0      # 其余 = 微盘
+
+# ── 卖出铁律参数 ──────────────────────────
+sell_signals:
+  # 铁律①：预期兑现 + 情绪高潮
+  signal_1_expectation_peak:
+    sentiment_quantile: 0.8     # 情绪分位数阈值
+    min_lookback_days: 10       # 最少回看天数
+    gain_threshold: 0.20        # 累计涨幅阈值
+
+  # 铁律②：板块弱化 + 资金流出
+  signal_2_sector_weakening:
+    consecutive_days: 3         # 连续下降天数
+    vol_skew_threshold: 0.0     # 成交量偏度阈值
+
+  # 铁律③：个股破位 + 共振消失
+  signal_3_breakdown:
+    ma_period: 20               # MA 周期
+    drop_threshold: 0.08        # 跌幅阈值
+    lookback_days: 5            # 跌幅回看天数
+
+# ── 数据源 ────────────────────────────────
+data_source:
+  db_path: "db/stock_data.db"
+  factor_tables:
+    - "factor_values"
+    - "factor_values_evo"
+  price_table: "daily_prices"
+  stock_list_table: "stock_list"
+
+# ── 过滤条件 ──────────────────────────────
+filters:
+  exclude_st: true               # 排除 ST 股
+  exclude_delist: true           # 排除退市股
+  min_trade_days: 60             # 最少上市交易日
+  min_valid_factors: 3           # 最少有效因子数（缺失超过则跳过）

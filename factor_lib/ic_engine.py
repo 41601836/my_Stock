@@ -38,14 +38,16 @@ class ICEngine:
         factor_name: str,
         ic_type: str = "rank",
         return_col: str = "fwd_ret_5d",
+        use_neutral: bool = False,
     ) -> pd.Series:
         """
         计算每日截面 IC 序列（全向量化）。
 
         ic_type: "rank" = Spearman, "normal" = Pearson
+        use_neutral: True 时使用 {factor_name}_neutral 列（中性化后的因子值）
         返回: pd.Series, index=trade_date, name="ic_{type}"
         """
-        f_col = factor_name
+        f_col = f"{factor_name}_neutral" if use_neutral else factor_name
         r_col = return_col
 
         # 1. 丢弃因子或收益为 NaN 的行
@@ -143,6 +145,7 @@ class ICEngine:
         factor_name: str,
         periods: Optional[List[int]] = None,
         ic_type: str = "rank",
+        use_neutral: bool = False,
     ) -> pd.DataFrame:
         """
         多周期 IC 衰减分析。
@@ -156,7 +159,7 @@ class ICEngine:
             col = f"fwd_ret_{n}d"
             if col not in df.columns:
                 continue
-            ic = self.compute_ic_series(df, factor_name, ic_type, col)
+            ic = self.compute_ic_series(df, factor_name, ic_type, col, use_neutral)
             s = self.compute_ic_summary(ic)
             rows.append({"period": n, **s})
 
@@ -204,6 +207,119 @@ class ICEngine:
                 "p_value": p,
                 "positive_ratio": pos,
             })
+
+        return pd.DataFrame(rows)
+
+    # ═══════════════════════════════════════════
+    #  纯净 IC 对比分析（P1 新增）
+    # ═══════════════════════════════════════════
+
+    def compute_ic_comparison(
+        self,
+        factor_names: List[str],
+        periods: Optional[List[int]] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        ic_type: str = "rank",
+        db_path: Optional[str] = None,
+    ) -> pd.DataFrame:
+        """
+        同时计算原始 IC 和纯净 IC（中性化后），返回对比分析表。
+
+        参数:
+            factor_names: 因子名列表
+            periods: 未来收益周期列表（如 [5, 10, 20]）
+            start_date / end_date: 日期范围
+            ic_type: "rank" 或 "normal"
+            db_path: 数据库路径，默认从 FactorTestConfig 读取
+
+        返回:
+            DataFrame，列包括:
+              factor, period, raw_ic_mean, raw_icir,
+              neutral_ic_mean, neutral_icir,
+              ic_change_pct, direction_flip, verdict
+            verdict:
+              KEEP   - |neutral_icir| >= 0.15 且方向未变
+              DROP   - |neutral_icir| < 0.10 或方向翻转
+              REVIEW - 中间状态
+        """
+        # 延迟导入，避免循环引用
+        from factor_lib.loader import FactorDataLoader
+        from factor_lib.neutralizer import FactorNeutralizer
+        from factor_lib.config import FactorTestConfig
+
+        if periods is None:
+            periods = [FactorTestConfig.default_period()]
+
+        db_path = db_path or FactorTestConfig.db_path()
+        loader = FactorDataLoader(db_path)
+        neutralizer = FactorNeutralizer(db_path)
+
+        # 加载原始因子 + 未来收益
+        print(f"ℹ️ [IC-Compare] 加载原始因子数据: {factor_names}")
+        raw_df = loader.load_factor_values(factor_names, start_date, end_date)
+        raw_df = loader.compute_forward_returns(raw_df, periods)
+
+        # 加载中性化因子 + 未来收益
+        print(f"ℹ️ [IC-Compare] 加载中性化因子数据")
+        try:
+            neut_df = neutralizer.load_neutral_factors(factor_names, start_date, end_date)
+            neut_df = loader.compute_forward_returns(neut_df, periods)
+        except Exception as e:
+            print(f"⚠️ [IC-Compare] 加载中性化数据失败: {e}")
+            print("  请先运行 FactorNeutralizer.batch_neutralize() 生成中性化数据")
+            return pd.DataFrame()
+
+        rows = []
+        for fn in factor_names:
+            for period in periods:
+                ret_col = f"fwd_ret_{period}d"
+
+                # 原始 IC
+                raw_ic = self.compute_ic_series(
+                    raw_df, fn, ic_type, ret_col, use_neutral=False
+                )
+                raw_summary = self.compute_ic_summary(raw_ic)
+
+                # 纯净 IC
+                neut_ic = self.compute_ic_series(
+                    neut_df, fn, ic_type, ret_col, use_neutral=True
+                )
+                neut_summary = self.compute_ic_summary(neut_ic)
+
+                raw_ic_mean = raw_summary["ic_mean"]
+                raw_icir = raw_summary["icir"]
+                neut_ic_mean = neut_summary["ic_mean"]
+                neut_icir = neut_summary["icir"]
+
+                # IC 变化率（按 IC 均值的相对变化）
+                if abs(raw_ic_mean) > 1e-8:
+                    ic_change_pct = (neut_ic_mean - raw_ic_mean) / abs(raw_ic_mean) * 100
+                else:
+                    ic_change_pct = float("inf") if neut_ic_mean != 0 else 0.0
+
+                # 方向翻转判定
+                direction_flip = (raw_ic_mean * neut_ic_mean) < 0
+
+                # 综合判定
+                if direction_flip or abs(neut_icir) < 0.10:
+                    verdict = "DROP"
+                elif abs(neut_icir) >= 0.15 and not direction_flip:
+                    verdict = "KEEP"
+                else:
+                    verdict = "REVIEW"
+
+                rows.append({
+                    "factor": fn,
+                    "period": period,
+                    "raw_ic_mean": raw_ic_mean,
+                    "raw_icir": raw_icir,
+                    "neutral_ic_mean": neut_ic_mean,
+                    "neutral_icir": neut_icir,
+                    "ic_change_pct": ic_change_pct,
+                    "direction_flip": direction_flip,
+                    "verdict": verdict,
+                })
 
         return pd.DataFrame(rows)
 
