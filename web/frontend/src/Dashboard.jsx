@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   Activity, TrendingUp, Target, Zap, RefreshCw,
   CheckCircle2, XCircle, AlertCircle, ChevronRight,
-  Play, Square, RotateCcw, Terminal,
+  Play, Square, RotateCcw, Terminal, ExternalLink, BookOpen,
 } from 'lucide-react'
 
 const API_BASE = '/api/dashboard'
@@ -14,6 +14,30 @@ const DIM_META = {
   sentiment: { name: '情绪', color: '#8b5cf6' },
 }
 const DIM_KEYS = ['chip', 'capital', 'sector', 'sentiment']
+
+function eastMoneyUrl(tsCode) {
+  if (!tsCode) return '#'
+  const parts = tsCode.split('.')
+  if (parts.length !== 2) return '#'
+  const code = parts[0]
+  const mkt = parts[1]
+  const prefix = mkt === 'SH' ? 'sh' : mkt === 'SZ' ? 'sz' : mkt === 'BJ' ? 'bj' : 'sh'
+  return `https://quote.eastmoney.com/${prefix}${code}.html`
+}
+
+function StockLink({ name, tsCode, className }) {
+  return (
+    <a
+      href={eastMoneyUrl(tsCode)}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={className || "font-medium text-gray-200 hover:text-cyan-400 transition inline-flex items-center gap-1"}
+    >
+      {name}
+      <ExternalLink size={11} className="opacity-40 hover:opacity-80" />
+    </a>
+  )
+}
 
 function StatCard({ icon: Icon, label, value, sub, color }) {
   return (
@@ -287,7 +311,7 @@ export default function Dashboard() {
                     <tr key={i} className="border-b border-[#1e293b]/50 hover:bg-[#131c2f]">
                       <td className="px-3 py-2 text-gray-500">{s.rank || i + 1}</td>
                       <td className="px-3 py-2">
-                        <div className="font-medium text-gray-200">{s.name}</div>
+                        <StockLink name={s.name} tsCode={s.ts_code} />
                         <div className="text-xs text-gray-500">{s.ts_code}</div>
                       </td>
                       <td className="px-3 py-2 text-right">
@@ -348,7 +372,7 @@ export default function Dashboard() {
                   {perf.map((p, i) => (
                     <tr key={i} className="border-b border-[#1e293b]/50 hover:bg-[#131c2f]">
                       <td className="px-3 py-2">
-                        <div className="font-medium text-gray-200 text-xs">{p.name}</div>
+                        <StockLink name={p.name} tsCode={p.ts_code} className="font-medium text-gray-200 text-xs hover:text-cyan-400 transition inline-flex items-center gap-1" />
                         <div className="text-[10px] text-gray-500">#{p.rank} {(p.resonance_score * 100).toFixed(0)}分</div>
                       </td>
                       <td className="px-3 py-2 text-right font-mono text-xs">
@@ -450,6 +474,147 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+
+      {/* ── 策略说明 + 因子释义 ── */}
+      <StrategyExplanation />
+    </div>
+  )
+}
+
+// ═════════════════════════════════════════
+//  策略说明 + 因子释义组件
+// ═════════════════════════════════════════
+
+const STRATEGY_TEXT = {
+  summary: '四重共振策略通过筹码、资金、板块、情绪四个维度对全市场股票进行截面评分，四维加权合成共振总分，按总分排名选股。共振等级分为 strong（>75分）、medium（>55分）、weak（>35分）、none（≤35分）。每日收盘后运行选股，次日验证表现，形成"选股→验证→归因→调权"的良性闭环。',
+}
+
+const DIM_EXPLANATIONS = [
+  {
+    key: 'chip', name: '筹码维度', color: '#10b981',
+    desc: '衡量股票的持仓成本分布和筹码集中度，反映主力建仓行为和获利盘压力。',
+    factors: [
+      { name: 'cyq_chip_concentration_60d', desc: 'CYQ 筹码集中度：基于指数衰减换手率加权的持仓成本分布直方图，计算 60 日内筹码集中程度。值越高表示筹码越集中在某价格区间，主力控盘力度越强。' },
+      { name: 'chip_concentration', desc: '均线偏离筹码集中度（回退因子）：基于收盘价与各均线的偏离度合成，作为 CYQ 不可用时的兜底指标。' },
+    ],
+  },
+  {
+    key: 'capital', name: '资金维度', color: '#06b6d4',
+    desc: '衡量股票的流动性特征和资金流向，反映市场参与度和机构资金态度。',
+    factors: [
+      { name: 'amihud_illiq_20d', desc: 'Amihud 非流动性指标：|日收益率| / 成交额 的 20 日均值。值越高表示股票越不流动，单位资金对价格冲击越大，适合捕捉流动性溢价。' },
+      { name: 'vol_ratio', desc: '量比：当日成交量与过去 5 日平均成交量之比，反映成交活跃度的突变。量比 > 1 表示放量，< 1 表示缩量。' },
+      { name: 'north_net_inflow_ratio', desc: '北向资金净流入占比：沪/深股通净买入额占流通市值的比例，反映外资对该股票的态度。正值表示外资净流入。' },
+    ],
+  },
+  {
+    key: 'sector', name: '板块维度', color: '#f59e0b',
+    desc: '衡量股票所属行业的整体强弱，反映板块轮动效应和行业资金流向。',
+    factors: [
+      { name: 'sector_strength', desc: '板块强度因子：按行业分组计算三个子指标加权合成——① 行业收益中位数（板块涨跌幅度）② 板块宽度（上涨家数/总家数）③ 行业成交额排名分位。三者加权后截面 rank 归一化到 [0,1]。值越高表示该行业当前越强。' },
+    ],
+  },
+  {
+    key: 'sentiment', name: '情绪维度', color: '#8b5cf6',
+    desc: '衡量市场参与者的情绪倾向和交易热度，反映散户跟风意愿和短期博弈氛围。',
+    factors: [
+      { name: 'sentiment_composite', desc: '情绪复合因子：综合换手率偏离度、成交额波动率、量价背离程度三个子指标，归一化到 [0,1]。值越高表示市场情绪越亢奋。' },
+      { name: 'turnover_rate', desc: '换手率（回退因子）：当日成交量与流通股本之比，直接反映交易活跃度。高换手通常伴随情绪高潮。' },
+    ],
+  },
+]
+
+const OTHER_FACTORS = [
+  { name: 'overnight_return_5d', desc: '隔夜收益 5 日均值：开盘价相对前日收盘价的变动率，反映隔夜消息面和散户情绪。A股隔夜收益主要由散户行为驱动。' },
+  { name: 'intraday_return_5d', desc: '日内收益 5 日均值：收盘价相对当日开盘价的变动率，反映日内机构博弈方向。A股日内收益主要由机构行为驱动。' },
+  { name: 'gk_volatility_20d', desc: 'Garman-Klass 波动率：基于 OHLC 四价的高效波动率估计器，比传统收盘价波动率更精确。利用日内极值信息，捕捉真实波动。' },
+  { name: 'parkinson_volatility_20d', desc: 'Parkinson 波动率：仅用最高价/最低价计算的波动率，计算简单但效率较高。' },
+  { name: 'turnover_volatility_20d', desc: '换手率波动率：20 日换手率标准差，衡量交易活跃度的稳定性。高波动表示资金进出频繁。' },
+  { name: 'volume_skewness_20d', desc: '成交量偏度：20 日成交量分布的偏斜度。正偏表示偶发放量，负偏表示偶发缩量。' },
+  { name: 'return_5d / return_20d / return_60d', desc: '不同周期的动量因子：过去 N 日累计收益率，衡量价格趋势的持续性。短期动量反映近期资金态度，长期动量反映基本面变化。' },
+  { name: 'volatility_10d / 20d / 60d / 120d', desc: '不同周期的波动率：基于收盘价的标准差年化，衡量价格波动程度。低波动股票通常风险调整后收益更优。' },
+  { name: 'max_drawdown_20d / 60d', desc: '最大回撤：过去 N 日内从最高点到最低点的最大跌幅，衡量下行风险。' },
+  { name: 'skewness_20d', desc: '收益偏度：20 日收益率分布的偏斜度。负偏表示左尾风险大（偶发大跌），正偏表示右尾机会多（偶发大涨）。' },
+  { name: 'pb / pe_ttm / roe', desc: '估值因子：PB（市净率）衡量股价相对净资产溢价；PE_TTM（滚动市盈率）衡量回本年限；ROE（净资产收益率）衡量盈利能力。低 PB + 高 ROE 是价值投资核心。' },
+  { name: 'north_net_inflow_ratio', desc: '北向资金净流入占比：外资通过沪/深股通净买入额占流通市值比，正值表示外资看好。' },
+  { name: 'profit_ratio_estimate', desc: '获利盘比例估算：基于均线偏离度估算当前持股者的盈利比例，高获利盘意味着获利回吐压力。' },
+  { name: 'chip_concentration', desc: '筹码集中度（均线偏离法）：收盘价与多条均线偏离程度的合成指标，作为 CYQ 的回退方案。' },
+]
+
+function StrategyExplanation() {
+  const [expanded, setExpanded] = useState(false)
+
+  return (
+    <div className="bg-[#0f1626] border border-[#1e293b] rounded-xl overflow-hidden">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between px-4 py-3 hover:bg-[#131c2f] transition"
+      >
+        <div className="flex items-center gap-2">
+          <BookOpen size={16} className="text-cyan-400" />
+          <span className="text-sm font-semibold text-gray-200">策略说明 · 因子释义</span>
+        </div>
+        <ChevronRight
+          size={16}
+          className={`text-gray-500 transition-transform ${expanded ? 'rotate-90' : ''}`}
+        />
+      </button>
+
+      {expanded && (
+        <div className="px-4 pb-4 space-y-4">
+          {/* 策略概述 */}
+          <div className="bg-[#0d1117] border border-[#1e293b] rounded-lg p-3">
+            <div className="text-xs font-semibold text-cyan-400 mb-2">策略概述</div>
+            <p className="text-xs text-gray-400 leading-relaxed">{STRATEGY_TEXT.summary}</p>
+          </div>
+
+          {/* 四维详解 */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {DIM_EXPLANATIONS.map(dim => (
+              <div key={dim.key} className="bg-[#0d1117] border border-[#1e293b] rounded-lg p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: dim.color }} />
+                  <span className="text-xs font-semibold" style={{ color: dim.color }}>{dim.name}</span>
+                </div>
+                <p className="text-[11px] text-gray-500 mb-2">{dim.desc}</p>
+                <div className="space-y-1.5">
+                  {dim.factors.map(f => (
+                    <div key={f.name} className="text-[11px]">
+                      <code className="text-cyan-300 bg-[#1e293b] px-1.5 py-0.5 rounded">{f.name}</code>
+                      <p className="text-gray-500 mt-0.5 leading-relaxed">{f.desc}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* 其他候选因子 */}
+          <div className="bg-[#0d1117] border border-[#1e293b] rounded-lg p-3">
+            <div className="text-xs font-semibold text-gray-300 mb-2">其他候选因子释义</div>
+            <div className="space-y-1.5">
+              {OTHER_FACTORS.map(f => (
+                <div key={f.name} className="text-[11px] flex gap-2">
+                  <code className="text-cyan-300 bg-[#1e293b] px-1.5 py-0.5 rounded shrink-0">{f.name}</code>
+                  <span className="text-gray-500 leading-relaxed">{f.desc}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* 闭环说明 */}
+          <div className="bg-[#0d1117] border border-[#1e293b] rounded-lg p-3">
+            <div className="text-xs font-semibold text-emerald-400 mb-2">闭环系统</div>
+            <div className="text-[11px] text-gray-400 leading-relaxed space-y-1">
+              <p>1. <strong className="text-gray-300">选股</strong>：每日收盘后运行共振引擎，选出 Top-20 写入 selection_log</p>
+              <p>2. <strong className="text-gray-300">验证</strong>：次日对比选股实际涨跌 vs 基准，计算超额收益和命中率，写入 performance_log</p>
+              <p>3. <strong className="text-gray-300">归因</strong>：分析各维度高分时命中率差异（edge），判断哪个维度当前最有效</p>
+              <p>4. <strong className="text-gray-300">调权</strong>：edge {'>'} 0 的维度增加权重，edge {'<'} 0 的降低权重，实现自动学习</p>
+              <p>5. <strong className="text-gray-300">Agent 巡航</strong>：后台搜索最优因子组合，达标（超额卡玛 ≥ 0.50）后部署权重</p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
