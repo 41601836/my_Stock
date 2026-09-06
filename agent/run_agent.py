@@ -36,6 +36,8 @@ from agent.validator import validate_factors
 from agent.searcher import search_new_factors, generate_factor_combinations
 from agent.recommender import recommend_adaptive_portfolio
 from agent.backtester import run_portfolio_backtest
+from agent.genetic_search import GeneticFactorSearcher
+from agent.anti_overfit import run_full_audit
 
 def parse_args():
     parser = argparse.ArgumentParser(description="因子自适应决策 Agent 系统")
@@ -62,6 +64,17 @@ def parse_args():
         type=int,
         default=60,
         help="自动巡航未达标时的每轮休眠秒数 (默认 60 秒)"
+    )
+    parser.add_argument(
+        "--genetic",
+        action="store_true",
+        default=True,
+        help="使用遗传算法搜索因子组合 (默认开启)"
+    )
+    parser.add_argument(
+        "--no-genetic",
+        action="store_true",
+        help="禁用遗传算法，回退随机网格搜索"
     )
     return parser.parse_args()
 
@@ -156,12 +169,18 @@ def load_resume_checkpoint(project_root):
     return {"tested_keys": tested_keys, "best": best, "traj_results": traj_results}
 
 
-def run_auto_cruise(config_path="agent/config.yaml", sleep_seconds=60):
+def run_auto_cruise(config_path="agent/config.yaml", sleep_seconds=60, use_genetic=True):
     """
     自动巡航调优流程
+
+    Parameters
+    ----------
+    use_genetic : bool
+        是否使用遗传算法搜索（True=遗传, False=随机网格）
     """
     print("\n" + "=" * 80)
-    print("🚀 启动 Agent 自动巡航自适应参数调优寻优模式")
+    search_mode = "遗传算法" if use_genetic else "随机网格"
+    print(f"🚀 启动 Agent 自动巡航自适应参数调优寻优模式 [{search_mode}]")
     print("=" * 80)
     
     # 备份原始配置文件
@@ -189,10 +208,25 @@ def run_auto_cruise(config_path="agent/config.yaml", sleep_seconds=60):
         # P1: 终端关闭/断开连接会向进程组发送 SIGHUP，未处理会导致进程秒死且无清理
         signal.signal(signal.SIGHUP, handle_signal)
     
-    # 1. 因子组合生成器生成 25 组候选因子组合
+    # 1. 因子组合生成器生成候选因子组合
     candidate_path = PATHS.config.candidate_factors
-    combinations = generate_factor_combinations(config_path, candidate_path, num_combinations=25)
-    print(f"📊 因子组合生成器已成功生成 {len(combinations)} 组进化候选因子组合。")
+
+    if use_genetic:
+        # ── 遗传算法搜索 ──
+        # 先用 generate_factor_combinations 获取候选池
+        temp_combos = generate_factor_combinations(config_path, candidate_path, num_combinations=25)
+        candidate_factors = list(set(f for combo in temp_combos for f in combo))
+        print(f"📊 遗传算法搜索器初始化: {len(candidate_factors)} 个候选因子")
+        ga_searcher = GeneticFactorSearcher(
+            candidate_factors=candidate_factors,
+            population_size=25,
+            max_generations=5,
+        )
+        combinations = ga_searcher.init_population()
+        print(f"📊 遗传算法初始种群: {len(combinations)} 个因子组合")
+    else:
+        combinations = generate_factor_combinations(config_path, candidate_path, num_combinations=25)
+        print(f"📊 因子组合生成器已成功生成 {len(combinations)} 组进化候选因子组合。")
     
     # 2. 超参数网格定义 (multiplier 仅对 special_boost.factors 生效，当前候选组合不含特权因子，维度已移除提速)
     param_grid = []
@@ -441,7 +475,26 @@ def run_auto_cruise(config_path="agent/config.yaml", sleep_seconds=60):
             # ===== P1-3 end =====
 
             # 进化决策判定
+            # ── 防过拟合审计 ──
             if best_combo_excess_calmar >= 0.50:
+                print(f"\n🔍 [防过拟合审计] 开始三段审计（Purged WF-CV + IC半衰期）...")
+
+                # 重新运行 validate 获取 df_aligned 用于审计
+                try:
+                    val_report, df_aligned = validate_factors(config_path)
+                    audit_factors = best_combo_rec_report["new_portfolio"]["factors"]
+                    audit_weights = best_combo_rec_report["new_portfolio"]["weights"]
+                    audit_result = run_full_audit(
+                        df_aligned, audit_factors, audit_weights, weeks_total=208
+                    )
+                    print(f"   审计结果: {audit_result['summary']}")
+                    if audit_result["overall_pass"]:
+                        print(f"   ✅ 防过拟合审计通过")
+                    else:
+                        print(f"   ⚠️ 防过拟合审计未通过 — 仍部署但标记为候选")
+                        search_history[-1]["audit_failed"] = audit_result["summary"]
+                except Exception as e:
+                    print(f"   ⚠️ 审计异常: {e}")
                 print(f"\n🎉 🔥 【达标成功】在第 {combo_idx:02d} 组因子组合寻找到达标组合！")
                 print(f"   - 因子组合: {combo}")
                 print(f"   - 最佳参数: top_n_stocks = {best_combo_params['top_n']}")
@@ -469,6 +522,84 @@ def run_auto_cruise(config_path="agent/config.yaml", sleep_seconds=60):
                 success = True
                 break
                 
+        # ── 遗传进化阶段 ──
+        if use_genetic and not success and len(search_history) > 0:
+            print(f"\n🧬 [遗传进化] 初始种群评估完成，开始进化...")
+            # 收集初始种群的适应度
+            all_evaluated = {}
+            for h in search_history:
+                key = tuple(h["factor_combination"])
+                cal = h["excess_calmar_ratio"]
+                if key not in all_evaluated or cal > all_evaluated[key]:
+                    all_evaluated[key] = cal
+
+            ga_searcher.candidate_factors = candidate_factors  # 确保引用正确
+
+            def evaluate_combo(combo):
+                """评估单个因子组合的适应度"""
+                cfg_data = None
+                with open(config_path, "r", encoding="utf-8") as f:
+                    cfg_data = yaml.safe_load(f)
+                cfg_data["factors"]["custom_new_factors"] = combo
+                cfg_data["backtest"]["top_n_stocks"] = 20
+                with open(config_path, "w", encoding="utf-8") as f:
+                    yaml.dump(cfg_data, f, allow_unicode=True)
+                try:
+                    rec, _, _ = run_single_full_process(config_path, weeks_to_test=104)
+                    cal = rec["new_portfolio"]["metrics"]["excess_calmar_ratio"]
+                except Exception:
+                    cal = -1.0
+
+                search_history.append({
+                    "combo_index": -1,
+                    "factor_combination": combo,
+                    "tested_params": {"top_n": 20},
+                    "excess_calmar_ratio": cal,
+                    "absolute_calmar_ratio": 0.0,
+                    "genetic_generation": True,
+                })
+                write_trace_report()
+                return cal
+
+            # 进化 3 代
+            for gen in range(3):
+                if len(search_history) >= max_loops or success:
+                    break
+                print(f"\n🧬 [遗传进化] 第 {gen+1} 代")
+                result = ga_searcher.evolve(
+                    evaluate_fn=evaluate_combo,
+                    initial_population=None,  # 从 all_evaluated 继续
+                    tested_cache=all_evaluated,
+                )
+                all_evaluated = result["all_evaluated"]
+
+                if result["best_fitness"] > best_overall_excess_calmar:
+                    best_overall_excess_calmar = result["best_fitness"]
+                    # 重新评估以获取完整报告
+                    best_combo = result["best_combo"]
+                    if best_combo:
+                        with open(config_path, "r", encoding="utf-8") as f:
+                            cfg_data = yaml.safe_load(f)
+                        cfg_data["factors"]["custom_new_factors"] = best_combo
+                        cfg_data["backtest"]["top_n_stocks"] = 20
+                        with open(config_path, "w", encoding="utf-8") as f:
+                            yaml.dump(cfg_data, f, allow_unicode=True)
+                        try:
+                            rec, _, _ = run_single_full_process(config_path, weeks_to_test=208)
+                            best_overall_run = {
+                                "factor_combination": best_combo,
+                                "params": {"top_n": 20},
+                                "rec_report": rec,
+                            }
+                            if best_overall_excess_calmar >= 0.50:
+                                success = True
+                                print(f"🎉 遗传进化找到达标组合! 卡玛={best_overall_excess_calmar:.4f}")
+                                break
+                        except Exception:
+                            pass
+
+            write_trace_report()
+
         # 兜底：若全跑完仍未达标，则自动部署全局最优
         if not success and best_overall_run is not None:
             print(f"\n⚖️ 【全尝试未达标】所有因子组合尝试完毕。自动部署全局最优解：")
@@ -535,7 +666,8 @@ def main():
         
     # 2. 自动巡航自适应参数寻优模式
     if args.auto:
-        run_auto_cruise("agent/config.yaml", sleep_seconds=args.sleep_seconds)
+        use_genetic = not args.no_genetic
+        run_auto_cruise("agent/config.yaml", sleep_seconds=args.sleep_seconds, use_genetic=use_genetic)
         return
         
     mode = args.mode

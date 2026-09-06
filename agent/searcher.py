@@ -18,28 +18,45 @@ def load_config(config_path="agent/config.yaml"):
     with open(config_path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
-def search_new_factors(df_aligned, active_base_factors, config_path="agent/config.yaml"):
+def search_new_factors(df_aligned, active_base_factors, config_path="agent/config.yaml", use_neutral=True):
     """
     在实验因子池中搜索能够填补失效因子空白的新候选因子。
     - df_aligned: 已经对齐了价格、因子与 regime 标签的完整 DataFrame (由 validator 传入以复用计算)
     - active_base_factors: 基础因子池中目前 VALID / WARNING 的因子列表
+    - use_neutral: 是否使用中性化后的因子值计算 IC（行业+市值剥离）
     """
     config = load_config(config_path)
     exp_factors = config["factors"]["experimental_pool"]
-    
+
     df_range = df_aligned[df_aligned["regime"] == "Range"].copy()
     unique_dates = df_range["trade_date"].unique()
-    
+
+    # ── 因子中性化（行业 + 市值剥离）──
+    if use_neutral:
+        try:
+            from factor_lib.neutralizer import FactorNeutralizer
+            neutralizer = FactorNeutralizer()
+            print(f"ℹ️ [Searcher] 因子中性化已启用（行业 + ln(circ_mv) 剥离）")
+            df_range = neutralizer.batch_neutralize(
+                df_range, exp_factors + active_base_factors,
+                date_col="trade_date"
+            )
+            print(f"   中性化完成: {len(exp_factors) + len(active_base_factors)} 个因子")
+        except Exception as e:
+            print(f"⚠️ [Searcher] 中性化失败，回退原始值: {e}")
+    else:
+        print(f"ℹ️ [Searcher] 因子中性化已关闭")
+
     print(f"ℹ️ [Searcher] 开始在 {len(exp_factors)} 个实验因子中进行有效性搜索...")
-    
+
     # 1. 计算每个实验因子在 Range 状态下的 Rank IC 时间序列 (向量化重构)
     date_counts = df_range["trade_date"].value_counts()
     valid_dates = date_counts[date_counts >= 30].index
     df_valid = df_range[df_range["trade_date"].isin(valid_dates)].copy()
-    
+
     # 横截面 Rank 秩转换
     df_valid["future_return_5d_rank"] = df_valid.groupby("trade_date")["future_return_5d"].rank()
-    
+
     rank_cols = []
     for f in exp_factors:
         rank_col = f + "_rank"
