@@ -17,11 +17,9 @@ factors:
   - skewness_20d
   - pb
   custom_new_factors:
-  - excess_return_20d
-  - return_120d
-  - return_20d
+  - amount_volatility_20d
+  - intraday_return_5d
   - roe
-  - volatility_60d
   experimental_pool:
   - return_10d
   - return_120d
