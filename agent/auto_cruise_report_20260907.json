@@ -1,0 +1,21 @@
+{
+    "run_date": "20260907",
+    "success_target_reached": false,
+    "best_overall_excess_calmar": null,
+    "best_overall_combination": null,
+    "best_overall_params": null,
+    "best_overall_factors": null,
+    "best_overall_weights": null,
+    "total_loops_tried": 0,
+    "robustness_gate": {
+        "enabled": true,
+        "min_excess_calmar": 0.0,
+        "required_topn": [
+            20,
+            10,
+            30
+        ],
+        "combos": []
+    },
+    "search_trajectory": []
+}

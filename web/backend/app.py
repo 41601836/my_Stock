@@ -778,7 +778,7 @@ def track_visitor(req: TrackRequest, request: Request):
             
     user_agent = request.headers.get("User-Agent", "unknown")
     try:
-        record_visitor(ip, req.device_id, req.path, user_agent)
+        record_visitor(ip=ip, user_agent=user_agent, device_id=req.device_id, path=req.path)
         return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -876,6 +876,23 @@ except Exception as _dash_exc:
     )
 
 
+# ═══════════════════════════════════════════════════════════
+# Alpha 搜索流水线路由（平行层，零侵入）
+# ═══════════════════════════════════════════════════════════
+try:
+    from routers import alpha_hunt_router
+    app.include_router(alpha_hunt_router)
+    import logging as _ah_logging
+    _ah_logging.getLogger(__name__).info(
+        "✅ [AlphaHunt] Alpha搜索流水线路由已挂载：/api/alpha-hunt/*（平行层，经典路由不受影响）"
+    )
+except Exception as _ah_exc:
+    import logging as _ah_logging2
+    _ah_logging2.getLogger(__name__).warning(
+        f"⚠️ [AlphaHunt] Alpha搜索流水线路由挂载失败（经典系统照常运行）：{_ah_exc}"
+    )
+
+
 # ══════════════════════════════════════════════════════════════════
 # 生产环境：托管前端静态文件（dist）—— 必须放在所有 API 路由之后
 # 当 web/frontend/dist 存在时，将其作为 SPA 静态资源挂载，
@@ -893,8 +910,8 @@ if os.path.isdir(_FRONTEND_DIST) and os.path.exists(os.path.join(_FRONTEND_DIST,
         app.mount("/assets", StaticFiles(directory=_assets_path), name="assets")
 
     # SPA fallback：所有非 /api 路径返回 index.html，交给 React Router 处理
-    @app.get("/{full_path:path}")
-    async def _spa_fallback(full_path: str):
+    @app.api_route("/{full_path:path}", methods=["GET", "HEAD"])
+    async def _spa_fallback(full_path: str, request: Request):
         # API 路径若落到这里（路由未匹配），返回 JSON 404 而不是 HTML
         if full_path.startswith("api"):
             return SafeJSONResponse(

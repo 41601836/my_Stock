@@ -52,13 +52,17 @@ import './index.css'
   window.fetch.__orig = _orig
 })()
 
+import ErrorBoundary from './ErrorBoundary.jsx'
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <BrowserRouter>
-      {/* zoom-root: 全局缩放容器，由 App.jsx 内的 useEffect 动态修改 transform */}
-      <div id="zoom-root">
-        <App />
-      </div>
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
+        {/* zoom-root: 全局缩放容器，由 App.jsx 内的 useEffect 动态修改 transform */}
+        <div id="zoom-root">
+          <App />
+        </div>
+      </BrowserRouter>
+    </ErrorBoundary>
   </React.StrictMode>,
 )

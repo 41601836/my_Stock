@@ -1,7 +1,7 @@
 backtest:
   full_weeks: 208
   quick_weeks: 104
-  top_n_stocks: 10
+  top_n_stocks: 20
   transaction_cost: 0.0015
 cruise:
   robustness_gate:
@@ -17,9 +17,8 @@ factors:
   - skewness_20d
   - pb
   custom_new_factors:
-  - amount_volatility_20d
-  - intraday_return_5d
-  - roe
+  - pe_ttm
+  - profit_ratio_estimate
   experimental_pool:
   - return_10d
   - return_120d

@@ -3,9 +3,11 @@ import {
   Activity, TrendingUp, Target, Zap, RefreshCw,
   CheckCircle2, XCircle, AlertCircle, ChevronRight,
   Play, Square, RotateCcw, Terminal, ExternalLink, BookOpen,
+  Dna, Microscope, BarChart3,
 } from 'lucide-react'
 
 const API_BASE = '/api/dashboard'
+const AH_BASE = '/api/alpha-hunt'
 
 const DIM_META = {
   chip:      { name: '筹码', color: '#10b981' },
@@ -80,6 +82,13 @@ export default function Dashboard() {
   const [error, setError] = useState(null)
   const [agentBusy, setAgentBusy] = useState(false)
 
+  // ── Alpha 搜索状态（Hook 必须在所有 early return 之前无条件调用）──
+  const [ahStatus, setAhStatus] = useState({ running: false, stage: 'idle', progress: '', elapsed_seconds: 0 })
+  const [ahResult, setAhResult] = useState(null)
+  const [ahIcReport, setAhIcReport] = useState([])
+  const [ahShowIC, setAhShowShowIC] = useState(false)
+  const [ahShowResult, setAhShowResult] = useState(false)
+
   const fetchData = useCallback(async () => {
     try {
       const r = await fetch(`${API_BASE}`)
@@ -104,7 +113,37 @@ export default function Dashboard() {
     if (data?.agent_status !== 'RUNNING') return
     const timer = setInterval(fetchData, 10000)
     return () => clearInterval(timer)
-  }, [data?.agent_status])
+  }, [data?.agent_status, fetchData])
+
+  const fetchAhStatus = useCallback(async () => {
+    try {
+      const r = await fetch(`${AH_BASE}/status`)
+      if (r.ok) setAhStatus(await r.json())
+    } catch {}
+  }, [])
+
+  useEffect(() => {
+    fetchAhStatus()
+    const t = setInterval(fetchAhStatus, 5000)
+    return () => clearInterval(t)
+  }, [fetchAhStatus])
+
+  const fetchAhResult = useCallback(async () => {
+    try {
+      const r = await fetch(`${AH_BASE}/result`)
+      if (r.ok) setAhResult(await r.json())
+    } catch {}
+  }, [])
+
+  const fetchIcReport = useCallback(async () => {
+    try {
+      const r = await fetch(`${AH_BASE}/ic-report`)
+      if (r.ok) {
+        const d = await r.json()
+        setAhIcReport(d.factors || [])
+      }
+    } catch {}
+  }, [])
 
   const runDaily = async () => {
     setRunning(true)
@@ -157,6 +196,17 @@ export default function Dashboard() {
     } finally {
       setAgentBusy(false)
     }
+  }
+
+  const startHunt = async () => {
+    try {
+      await fetch(`${AH_BASE}/run`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ weeks: 104, population_size: 30, max_generations: 5 }),
+      })
+      fetchAhStatus()
+    } catch {}
   }
 
   if (loading) {
@@ -472,6 +522,124 @@ export default function Dashboard() {
               })}
             </div>
           )}
+        </div>
+      </div>
+
+      {/* ── Alpha 搜索流水线 ── */}
+      <div className="bg-[#0a0e17] border border-[#1e293b] rounded-xl p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-bold text-gray-200 flex items-center gap-2">
+            <Dna size={16} className="text-cyan-400" />
+            Alpha 搜索流水线
+          </h3>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={startHunt}
+              disabled={ahStatus.running}
+              className={`px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 ${
+                ahStatus.running
+                  ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                  : 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 border border-emerald-500/30'
+              }`}
+            >
+              <Play size={12} /> 启动搜索
+            </button>
+            <button
+              onClick={() => { fetchIcReport(); setAhShowShowIC(!ahShowIC) }}
+              className="px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 border border-cyan-500/30"
+            >
+              <Microscope size={12} /> 因子体检
+            </button>
+            <button
+              onClick={() => { fetchAhResult(); setAhShowResult(!ahShowResult) }}
+              className="px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 border border-purple-500/30"
+            >
+              <BarChart3 size={12} /> 搜索结果
+            </button>
+          </div>
+        </div>
+
+        {/* 状态条 */}
+        {ahStatus.running && (
+          <div className="mb-3 bg-[#0d1117] border border-[#1e293b] rounded-lg p-3">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="text-xs text-emerald-400 font-semibold">{ahStatus.stage}</span>
+              <span className="text-xs text-gray-500 ml-auto">{ahStatus.elapsed_seconds}s</span>
+            </div>
+            <p className="text-xs text-gray-400">{ahStatus.progress}</p>
+          </div>
+        )}
+
+        {/* 因子体检报告 */}
+        {ahShowIC && ahIcReport.length > 0 && (
+          <div className="mb-3 overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-gray-500 border-b border-[#1e293b]">
+                  <th className="text-left py-1.5 px-2">因子</th>
+                  <th className="text-right py-1.5 px-2">IC均值</th>
+                  <th className="text-right py-1.5 px-2">t值</th>
+                  <th className="text-right py-1.5 px-2">半衰期</th>
+                  <th className="text-right py-1.5 px-2">胜率</th>
+                  <th className="text-center py-1.5 px-2">状态</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ahIcReport.map(r => (
+                  <tr key={r.factor} className="border-b border-[#1e293b]/50 hover:bg-[#1e293b]/30">
+                    <td className="py-1.5 px-2"><code className="text-cyan-300">{r.factor}</code></td>
+                    <td className={`text-right py-1.5 px-2 ${r.ic_mean > 0 ? 'text-emerald-400' : 'text-red-400'}`}>{r.ic_mean > 0 ? '+' : ''}{r.ic_mean?.toFixed(4)}</td>
+                    <td className="text-right py-1.5 px-2 text-gray-300">{r.t_stat?.toFixed(1)}</td>
+                    <td className="text-right py-1.5 px-2 text-gray-300">{r.halflife_weeks ? `${r.halflife_weeks}w` : '—'}</td>
+                    <td className="text-right py-1.5 px-2 text-gray-300">{r.winrate?.toFixed(3)}</td>
+                    <td className="text-center py-1.5 px-2">
+                      {r.status === 'PASS' ? <CheckCircle2 size={14} className="text-emerald-400 inline" /> : <XCircle size={14} className="text-red-400 inline" />}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* 搜索结果 */}
+        {ahShowResult && ahResult && (
+          <div className="mb-3 bg-[#0d1117] border border-[#1e293b] rounded-lg p-3 space-y-2">
+            {ahResult.error ? (
+              <p className="text-xs text-red-400">{ahResult.error}</p>
+            ) : ahResult.best_combo ? (
+              <>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-gray-500">最优组合:</span>
+                  <div className="flex flex-wrap gap-1">
+                    {ahResult.best_combo.map(f => (
+                      <code key={f} className="text-xs text-cyan-300 bg-[#1e293b] px-1.5 py-0.5 rounded">{f}</code>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex items-center gap-4 text-xs">
+                  <span className="text-gray-500">适应度: <strong className="text-emerald-400">{ahResult.best_fitness}</strong></span>
+                  <span className="text-gray-500">评估组合数: {ahResult.n_evaluated}</span>
+                  <span className="text-gray-500">回测周数: {ahResult.n_weeks}</span>
+                </div>
+                {ahResult.passed_factors && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-500">通过IC筛选:</span>
+                    <span className="text-xs text-gray-400">{ahResult.passed_factors.length} 个因子</span>
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className="text-xs text-gray-500">尚无搜索结果，请先启动搜索</p>
+            )}
+          </div>
+        )}
+
+        {/* 搜索方法论说明 */}
+        <div className="text-[11px] text-gray-500 leading-relaxed mt-2 pt-2 border-t border-[#1e293b]/50">
+          <span className="text-gray-400 font-semibold">流水线:</span>
+          IC 预筛选(半衰期≥1.5w) → 中性化预计算缓存 → 遗传搜索(50种群×10代) → 复合适应度(ER/max(MDD,4%)×ICIR/0.4) → Buffer Zone(Top20/Top35) → 四关验证
         </div>
       </div>
 

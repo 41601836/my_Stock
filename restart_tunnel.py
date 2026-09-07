@@ -30,7 +30,7 @@ open(TUNNEL_URL_FILE, "w").close()
 cmd = [
     "cloudflared", "tunnel",
     "--protocol", "http2",
-    "--url", "http://localhost:5173",
+    "--url", "http://localhost:8000",
     "--no-autoupdate",
 ]
 logfp = open(TUNNEL_LOG, "w", buffering=1)

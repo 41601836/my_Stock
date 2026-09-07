@@ -21,10 +21,10 @@ class GeneticFactorSearcher:
     def __init__(
         self,
         candidate_factors: List[str],
-        population_size: int = 25,
-        combo_size_range: Tuple[int, int] = (3, 5),
+        population_size: int = 50,
+        combo_size_range: Tuple[int, int] = (2, 5),
         crossover_rate: float = 0.7,
-        mutation_rate: float = 0.15,
+        mutation_rate: float = 0.10,
         elite_ratio: float = 0.2,
         max_generations: int = 10,
         seed: int = 42,

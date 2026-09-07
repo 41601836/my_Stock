@@ -15,10 +15,12 @@ from typing import Dict, List, Optional
 class FactorMeta:
     name: str
     direction: int          # +1 正向（值大越好），-1 反向（值小越好）
-    category: str           # 动量/波动率/估值/流动性/聪明钱/防御/复合/交叉/预期差
+    category: str           # 动量/波动率/估值/流动性/聪明钱/防御/复合/交叉/预期差/筹码/板块/情绪
     table: str              # "factor_values" 或 "factor_values_evo"
     description: str
     direction_note: str = ""
+    needs_neutral: bool = True   # 是否需要行业+市值中性化（默认True）
+    candidate: bool = True       # 是否加入Agent搜索候选池（默认True）
 
 
 _FACTOR_LIST: List[FactorMeta] = [
@@ -145,7 +147,7 @@ _FACTOR_LIST: List[FactorMeta] = [
     FactorMeta("low_turnover_flag", +1, "防御", "factor_values",
                "低换手标记(0/1)", "低换手股票更稳健"),
     FactorMeta("timeliness_decay", +1, "防御", "factor_values",
-               "时效性衰减因子(常数占位)", "占位因子，IC预期接近0"),
+               "时效性衰减因子(常数占位)", "占位因子，IC预期接近0", candidate=False),
 
     # ═══════════ 复合/辅助 (3) ═══════════
     FactorMeta("hot_money_score", -1, "复合", "factor_values",
@@ -197,7 +199,7 @@ _FACTOR_LIST: List[FactorMeta] = [
     FactorMeta("graham_score", +1, "防御", "factor_values_evo",
                "Graham 7项防御评分(0-7整数)", "Graham价值防御综合评分"),
     FactorMeta("text_sentiment_score", +1, "复合", "factor_values_evo",
-               "文本情绪因子(规则打分)", "新闻/公告情绪因子，部分日期可能缺失"),
+               "文本情绪因子(规则打分)", "新闻/公告情绪因子，部分日期可能缺失", candidate=False),
 ]
 
 
@@ -226,3 +228,13 @@ def get_classic_factor_names() -> List[str]:
 
 def get_evo_factor_names() -> List[str]:
     return [f.name for f in _FACTOR_LIST if f.table == "factor_values_evo"]
+
+
+def get_candidate_factors() -> List[str]:
+    """获取所有标记为 candidate=True 的因子名（Agent 搜索候选池）"""
+    return [f.name for f in _FACTOR_LIST if f.candidate]
+
+
+def get_candidate_meta() -> List[FactorMeta]:
+    """获取所有候选因子的元数据"""
+    return [f for f in _FACTOR_LIST if f.candidate]

@@ -1083,14 +1083,18 @@ def diagnose_stock(ts_code: str, strategy: str = "current"):
         conn.close()
 
 
-def record_visitor(ip: str, user_agent: str = ""):
-    """访客日志"""
+def record_visitor(ip: str, user_agent: str = "", device_id: str = "", path: str = ""):
+    """访客日志记录"""
     log_dir = os.path.join(PROJECT_ROOT, "logs")
     os.makedirs(log_dir, exist_ok=True)
     log_path = os.path.join(log_dir, "visitors.log")
     try:
+        ts = datetime.datetime.now().isoformat(timespec='seconds')
+        clean_ua = (user_agent or "")[:200].replace("\t", " ")
+        clean_path = (path or "")[:100].replace("\t", " ")
+        clean_dev = (device_id or "")[:50].replace("\t", " ")
         with open(log_path, "a", encoding="utf-8") as f:
-            f.write(f"{datetime.datetime.now().isoformat(timespec='seconds')}\t{ip}\t{user_agent[:200]}\n")
+            f.write(f"{ts}\t{ip}\t{clean_ua}\t{clean_dev}\t{clean_path}\n")
         return True
     except Exception as e:
         _logger.warning(f"record_visitor failed: {e}")
